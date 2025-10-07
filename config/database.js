@@ -1,53 +1,119 @@
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+/**
+ * EXPANDSPAIN ALPHA™ - DATABASE CONNECTION
+ * Configuração de conexão MySQL com pool de conexões
+ * 
+ * IMPORTANTE: Este arquivo substitui COMPLETAMENTE o anterior
+ * que tinha código de IA incorretamente misturado.
+ */
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const mysql = require('mysql2/promise');
 
-async function generateAIAnalysis(scoreData, language = 'pt') {
+// Configuração do pool de conexões
+const pool = mysql.createPool({
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    
+    // Configurações de pool
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+    
+    // Configurações de timeout
+    connectTimeout: 10000,
+    acquireTimeout: 10000,
+    
+    // Manter conexão viva
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 10000,
+    
+    // Timezone
+    timezone: 'Z',
+    
+    // Charset
+    charset: 'utf8mb4'
+});
+
+/**
+ * Testa a conexão com o banco de dados
+ * Executa ao iniciar a aplicação
+ */
+async function testConnection() {
     try {
-        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-        
-        const langMap = { 
-            'pt': 'Português do Brasil', 
-            'en': 'English', 
-            'es': 'Español' 
-        };
-        
-        const prompt = `PERSONA: Você é o Alpha AI, consultor de imigração especializado no Visto de Nômade Digital da Espanha. Tom direto e estratégico.
-
-TAREFA: Gerar análise em ${langMap[language]} sobre elegibilidade do candidato.
-
-DADOS:
-- Perfil: ${scoreData.profile}
-- Score: ${scoreData.score}/100
-- Status: ${scoreData.status}
-- Pontos Fortes: ${scoreData.strengths.join(', ') || 'Nenhum'}
-- Gaps: ${scoreData.gaps.join(', ') || 'Nenhum'}
-
-REGRAS:
-1. Escreva em ${langMap[language]}
-2. Use 2-3 parágrafos (máx 200 palavras)
-3. Seja direto sobre chances reais
-4. Mencione 2-3 gaps mais críticos
-5. Finalize com recomendação: DIY, DFY ou não elegível
-6. Tom profissional mas acessível
-7. Sem emojis
-
-FORMATO:
-[Análise em 2-3 parágrafos]`;
-
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        return response.text();
-        
+        const connection = await pool.getConnection();
+        console.log('✅ MySQL conectado com sucesso!');
+        console.log(`   Host: ${process.env.DB_HOST}`);
+        console.log(`   Database: ${process.env.DB_NAME}`);
+        connection.release();
+        return true;
     } catch (error) {
-        console.error('Erro ao gerar análise IA:', error);
-        const fallback = {
-            'pt': 'Análise indisponível no momento. Revise pontos fortes e gaps acima.',
-            'en': 'Analysis unavailable. Review strengths and gaps above.',
-            'es': 'Análisis no disponible. Revise puntos fuertes y gaps.'
-        };
-        return fallback[language] || fallback['pt'];
+        console.error('❌ Erro ao conectar ao MySQL:', error.message);
+        console.error('   Verifique as variáveis de ambiente:');
+        console.error('   - DB_HOST');
+        console.error('   - DB_USER');
+        console.error('   - DB_PASSWORD');
+        console.error('   - DB_NAME');
+        return false;
     }
 }
 
-module.exports = { generateAIAnalysis };
+/**
+ * Função auxiliar para executar queries com retry
+ * @param {string} sql - Query SQL
+ * @param {array} params - Parâmetros da query
+ * @param {number} retries - Número de tentativas
+ */
+async function executeQuery(sql, params = [], retries = 3) {
+    let lastError;
+    
+    for (let i = 0; i < retries; i++) {
+        try {
+            const [rows] = await pool.execute(sql, params);
+            return rows;
+        } catch (error) {
+            lastError = error;
+            console.error(`Tentativa ${i + 1}/${retries} falhou:`, error.message);
+            
+            // Aguardar antes de tentar novamente
+            if (i < retries - 1) {
+                await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+            }
+        }
+    }
+    
+    throw lastError;
+}
+
+/**
+ * Graceful shutdown
+ */
+async function closePool() {
+    try {
+        await pool.end();
+        console.log('✅ Pool de conexões MySQL fechado');
+    } catch (error) {
+        console.error('❌ Erro ao fechar pool:', error.message);
+    }
+}
+
+// Event listeners
+pool.on('connection', (connection) => {
+    console.log('Nova conexão MySQL criada');
+});
+
+pool.on('acquire', (connection) => {
+    console.log('Conexão adquirida do pool');
+});
+
+pool.on('release', (connection) => {
+    console.log('Conexão devolvida ao pool');
+});
+
+// Exportar pool e funções
+module.exports = {
+    pool,
+    testConnection,
+    executeQuery,
+    closePool
+};

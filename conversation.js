@@ -1,3 +1,9 @@
+/**
+ * EXPANDSPAIN ALPHA™ - CONVERSATION FLOW
+ * Sistema de perguntas com fluxo condicional
+ * Versão compatível com server.js otimizado v2.1
+ */
+
 const questions = {
     q_V1: {
         pt: "Para realizar o teste, escolha o seu Perfil:",
@@ -331,6 +337,63 @@ const conversationFlow = {
     'q_V20': 'END_OF_QUESTIONNAIRE'
 };
 
+// Mapa de índices numéricos para IDs de perguntas
+const questionIndexMap = [
+    'q_V1',   // 0
+    'q_V2',   // 1
+    'q_V3',   // 2
+    'q_V4',   // 3
+    'q_V5',   // 4
+    'q_V6',   // 5
+    'q_V7_A', // 6
+    'q_V7A_2',// 7
+    'q_V8_A', // 8
+    'q_V9_A', // 9
+    'q_V7_B', // 10
+    'q_V8_B', // 11
+    'q_V9_B', // 12
+    'q_V7_C', // 13
+    'q_V8_C', // 14
+    'q_V9_C', // 15
+    'q_V10',  // 16
+    'q_V11',  // 17
+    'q_V12',  // 18
+    'q_V13',  // 19
+    'q_V14',  // 20
+    'q_V15',  // 21
+    'q_V16',  // 22
+    'q_V17',  // 23
+    'q_V18',  // 24
+    'q_V19',  // 25
+    'q_V20'   // 26
+];
+
+/**
+ * Função compatível com server.js otimizado v2.1
+ * Recebe índice numérico e retorna pergunta formatada
+ */
+function getQuestion(index, language = 'pt', answers = {}) {
+    // Converter índice para ID de pergunta
+    const questionId = questionIndexMap[index];
+    
+    if (!questionId) {
+        // Fim do questionário
+        return null;
+    }
+    
+    // Usar getNextStep para obter a pergunta
+    const result = getNextStep(questionId, answers, language);
+    
+    if (result.isFinished || !result.nextQuestion) {
+        return null;
+    }
+    
+    return result.nextQuestion;
+}
+
+/**
+ * Função original getNextStep (mantida para compatibilidade)
+ */
 function getNextStep(currentStep, answers, language = 'pt') {
     if (!currentStep) currentStep = 'START';
     
@@ -384,4 +447,9 @@ function getNextStep(currentStep, answers, language = 'pt') {
     };
 }
 
-module.exports = { getNextStep, questions };
+// Exportar ambas as funções para compatibilidade
+module.exports = { 
+    getQuestion,    // ← NOVA: Para server.js v2.1
+    getNextStep,    // ← ORIGINAL: Mantida para compatibilidade
+    questions 
+};

@@ -1,6 +1,7 @@
 /**
- * EXPANDSPAIN ALPHA™ - MAIN SERVER (OPTIMIZED v2.1)
+ * EXPANDSPAIN ALPHA™ - MAIN SERVER (OPTIMIZED v2.1.1)
  * Backend principal com segurança, rate limiting e validações
+ * FIX: Trust proxy configurado para Render.com
  */
 
 require('dotenv').config();
@@ -34,6 +35,12 @@ app.use(cors({
     credentials: true
 }));
 
+// Body parser com limite de tamanho
+app.use(express.json({ limit: '1mb' }));
+
+// ✅ FIX: Trust proxy para Render.com e rate limiting
+app.set('trust proxy', 1);
+
 // Rate limiting - CRÍTICO para prevenir abuso
 const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutos
@@ -60,9 +67,6 @@ const diagnoseLimiter = rateLimit({
 app.use('/api/', apiLimiter);
 app.use('/api/diagnose', diagnoseLimiter);
 
-// Body parser com limite de tamanho
-app.use(express.json({ limit: '1mb' }));
-
 // Request timeout - 30 segundos
 app.use((req, res, next) => {
     req.setTimeout(30000, () => {
@@ -87,7 +91,7 @@ app.get('/health', (req, res) => {
         status: 'ok',
         timestamp: new Date().toISOString(),
         environment: process.env.NODE_ENV || 'development',
-        version: '2.1.0'
+        version: '2.1.1'
     });
 });
 
@@ -613,7 +617,7 @@ async function startServer() {
         app.listen(PORT, () => {
             console.log('');
             console.log('='.repeat(60));
-            console.log('🚀 EXPANDSPAIN ALPHA™ v2.1 - BACKEND OTIMIZADO');
+            console.log('🚀 EXPANDSPAIN ALPHA™ v2.1.1 - BACKEND OTIMIZADO');
             console.log('='.repeat(60));
             console.log(`   Ambiente: ${process.env.NODE_ENV || 'development'}`);
             console.log(`   Porta: ${PORT}`);

@@ -1,12 +1,15 @@
 /**
- * EXPANDSPAIN ALPHA™ - MAIN SERVER
- * Backend principal com sessões persistentes em MySQL
+ * EXPANDSPAIN ALPHA™ - MAIN SERVER (OPTIMIZED v2.1)
+ * Backend principal com segurança, rate limiting e validações
  */
 
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { v4: uuidv4 } = require('uuid');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const { body, param, validationResult } = require('express-validator');
+const { v4: uuidv4, validate: isValidUUID } = require('uuid');
 
 // Importar módulos
 const { pool, testConnection, closePool } = require('./config/database');
@@ -19,13 +22,62 @@ const { sendResultNotification } = require('./services/whatsappService');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ============ MIDDLEWARES ============
-app.use(cors());
-app.use(express.json());
+// ============ SECURITY MIDDLEWARES ============
+
+// Helmet - Security headers
+app.use(helmet());
+
+// CORS configurado
+app.use(cors({
+    origin: process.env.SITE_URL || 'https://expandspain.com',
+    methods: ['GET', 'POST'],
+    credentials: true
+}));
+
+// Rate limiting - CRÍTICO para prevenir abuso
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutos
+    max: 100, // 100 requests por IP
+    message: { 
+        error: 'Too many requests. Please try again in 15 minutes.',
+        code: 'RATE_LIMIT_EXCEEDED'
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+// Rate limit mais restritivo para diagnose
+const diagnoseLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hora
+    max: 30, // 30 requests por hora
+    message: { 
+        error: 'Too many diagnosis requests. Please try again later.',
+        code: 'DIAGNOSIS_LIMIT_EXCEEDED'
+    },
+});
+
+// Aplicar rate limiting
+app.use('/api/', apiLimiter);
+app.use('/api/diagnose', diagnoseLimiter);
+
+// Body parser com limite de tamanho
+app.use(express.json({ limit: '1mb' }));
+
+// Request timeout - 30 segundos
+app.use((req, res, next) => {
+    req.setTimeout(30000, () => {
+        res.status(408).json({ 
+            error: 'Request timeout',
+            code: 'TIMEOUT'
+        });
+    });
+    next();
+});
 
 // Logging middleware
 app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+    const timestamp = new Date().toISOString();
+    console.log(`${timestamp} - ${req.method} ${req.path} - IP: ${req.ip}`);
     next();
 });
 
@@ -34,9 +86,52 @@ app.get('/health', (req, res) => {
     res.json({ 
         status: 'ok',
         timestamp: new Date().toISOString(),
-        environment: process.env.NODE_ENV || 'development'
+        environment: process.env.NODE_ENV || 'development',
+        version: '2.1.0'
     });
 });
+
+// ============ VALIDATION MIDDLEWARE ============
+
+/**
+ * Validação para action START
+ */
+const validateStart = [
+    body('action').equals('START'),
+    body('language').optional().isIn(['pt', 'en', 'es']),
+    body('userData.email').isEmail().normalizeEmail(),
+    body('userData.firstName').optional().trim().isLength({ min: 1, max: 100 }),
+    body('userData.lastName').optional().trim().isLength({ min: 1, max: 100 }),
+    body('userData.whatsapp').optional().matches(/^\+\d{10,15}$/),
+    body('userData.passportCountry').optional().trim().isLength({ min: 2, max: 100 }),
+];
+
+/**
+ * Validação para action RESPONSE
+ */
+const validateResponse = [
+    body('action').equals('RESPONSE'),
+    body('sessionId').custom((value) => {
+        if (!isValidUUID(value)) {
+            throw new Error('Invalid sessionId format');
+        }
+        return true;
+    }),
+    body('responseData').isObject(),
+];
+
+/**
+ * Validação para action GENERATE_REPORT
+ */
+const validateReport = [
+    body('action').equals('GENERATE_REPORT'),
+    body('sessionId').custom((value) => {
+        if (!isValidUUID(value)) {
+            throw new Error('Invalid sessionId format');
+        }
+        return true;
+    }),
+];
 
 // ============ ENDPOINT PRINCIPAL ============
 app.post('/api/diagnose', async (req, res) => {
@@ -45,18 +140,31 @@ app.post('/api/diagnose', async (req, res) => {
     try {
         // ========== ACTION: START ==========
         if (action === 'START') {
-            console.log('📝 Iniciando novo diagnóstico...');
-            
-            // Validar dados do usuário
-            if (!userData || !userData.email) {
+            // Validar entrada
+            await Promise.all(validateStart.map(validation => validation.run(req)));
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
                 return res.status(400).json({ 
-                    error: 'Email é obrigatório' 
+                    error: 'Validation failed',
+                    details: errors.array(),
+                    code: 'VALIDATION_ERROR'
                 });
             }
 
+            console.log('📝 Iniciando novo diagnóstico...');
+
             // Gerar IDs únicos
             const newSessionId = uuidv4();
-            const accessCode = generateAccessCode();
+            const accessCode = await generateUniqueAccessCode();
+
+            // Sanitizar dados do usuário
+            const sanitizedUserData = {
+                email: userData.email.toLowerCase().trim(),
+                firstName: userData.firstName?.trim().substring(0, 100) || null,
+                lastName: userData.lastName?.trim().substring(0, 100) || null,
+                whatsapp: userData.whatsapp?.trim() || null,
+                passportCountry: userData.passportCountry?.trim().substring(0, 100) || null,
+            };
 
             // Salvar no banco de dados
             await pool.execute(
@@ -66,18 +174,18 @@ app.post('/api/diagnose', async (req, res) => {
                 [
                     newSessionId,
                     accessCode,
-                    userData.email,
-                    userData.firstName || null,
-                    userData.lastName || null,
-                    userData.whatsapp || null,
-                    userData.passportCountry || null,
+                    sanitizedUserData.email,
+                    sanitizedUserData.firstName,
+                    sanitizedUserData.lastName,
+                    sanitizedUserData.whatsapp,
+                    sanitizedUserData.passportCountry,
                     language,
-                    0 // Começar na pergunta 0
+                    0
                 ]
             );
 
             console.log(`✅ Sessão criada: ${newSessionId}`);
-            console.log(`   Email: ${userData.email}`);
+            console.log(`   Email: ${sanitizedUserData.email}`);
             console.log(`   Código: ${accessCode}`);
 
             // Buscar primeira pergunta
@@ -97,24 +205,33 @@ app.post('/api/diagnose', async (req, res) => {
 
         // ========== ACTION: RESPONSE ==========
         if (action === 'RESPONSE') {
-            console.log(`📥 Processando resposta da sessão: ${sessionId}`);
-
-            // Validar sessionId
-            if (!sessionId) {
+            // Validar entrada
+            await Promise.all(validateResponse.map(validation => validation.run(req)));
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
                 return res.status(400).json({ 
-                    error: 'sessionId é obrigatório' 
+                    error: 'Validation failed',
+                    details: errors.array(),
+                    code: 'VALIDATION_ERROR'
                 });
             }
 
-            // Buscar sessão no banco
+            console.log(`📥 Processando resposta da sessão: ${sessionId}`);
+
+            // Buscar sessão no banco (SELECT específico, não *)
             const [sessions] = await pool.execute(
-                'SELECT * FROM alpha_diagnoses WHERE session_id = ?',
+                `SELECT session_id, email, first_name, last_name, whatsapp, 
+                        current_question_index, answers_json, completed_at, language
+                 FROM alpha_diagnoses 
+                 WHERE session_id = ? 
+                 LIMIT 1`,
                 [sessionId]
             );
 
             if (sessions.length === 0) {
                 return res.status(404).json({ 
-                    error: 'Sessão não encontrada' 
+                    error: 'Session not found',
+                    code: 'SESSION_NOT_FOUND'
                 });
             }
 
@@ -123,7 +240,8 @@ app.post('/api/diagnose', async (req, res) => {
             // Verificar se já completou
             if (session.completed_at) {
                 return res.status(400).json({ 
-                    error: 'Teste já foi completado' 
+                    error: 'Test already completed',
+                    code: 'TEST_COMPLETED'
                 });
             }
 
@@ -134,7 +252,10 @@ app.post('/api/diagnose', async (req, res) => {
                     answers = JSON.parse(session.answers_json);
                 } catch (e) {
                     console.error('Erro ao parsear answers_json:', e);
-                    answers = {};
+                    return res.status(500).json({ 
+                        error: 'Failed to parse session data',
+                        code: 'PARSE_ERROR'
+                    });
                 }
             }
 
@@ -144,7 +265,7 @@ app.post('/api/diagnose', async (req, res) => {
 
             // Determinar próxima pergunta
             const nextIndex = currentIndex + 1;
-            const nextQuestion = conversation.getQuestion(nextIndex, language, answers);
+            const nextQuestion = conversation.getQuestion(nextIndex, session.language, answers);
 
             // Atualizar banco de dados
             await pool.execute(
@@ -167,7 +288,7 @@ app.post('/api/diagnose', async (req, res) => {
                 return res.json({
                     success: true,
                     completed: true,
-                    message: 'Teste completo. Gerando análise...'
+                    message: 'Test completed. Generating analysis...'
                 });
             }
 
@@ -185,28 +306,50 @@ app.post('/api/diagnose', async (req, res) => {
 
         // ========== ACTION: GENERATE_REPORT ==========
         if (action === 'GENERATE_REPORT') {
-            console.log(`📊 Gerando relatório para sessão: ${sessionId}`);
-
-            // Validar sessionId
-            if (!sessionId) {
+            // Validar entrada
+            await Promise.all(validateReport.map(validation => validation.run(req)));
+            const errors = validationResult(req);
+            if (!errors.isEmpty()) {
                 return res.status(400).json({ 
-                    error: 'sessionId é obrigatório' 
+                    error: 'Validation failed',
+                    details: errors.array(),
+                    code: 'VALIDATION_ERROR'
                 });
             }
 
+            console.log(`📊 Gerando relatório para sessão: ${sessionId}`);
+
             // Buscar sessão
             const [sessions] = await pool.execute(
-                'SELECT * FROM alpha_diagnoses WHERE session_id = ?',
+                `SELECT * FROM alpha_diagnoses 
+                 WHERE session_id = ? 
+                 LIMIT 1`,
                 [sessionId]
             );
 
             if (sessions.length === 0) {
                 return res.status(404).json({ 
-                    error: 'Sessão não encontrada' 
+                    error: 'Session not found',
+                    code: 'SESSION_NOT_FOUND'
                 });
             }
 
             const session = sessions[0];
+
+            // Verificar se já gerou relatório
+            if (session.completed_at) {
+                console.log('⚠️  Relatório já foi gerado anteriormente');
+                return res.json({
+                    success: true,
+                    score: session.score,
+                    status: session.status,
+                    statusColor: session.status_color,
+                    aiAnalysis: session.ai_analysis,
+                    accessCode: session.access_code,
+                    ctaRecommended: 'oracle',
+                    message: 'Report already generated'
+                });
+            }
 
             // Parsear respostas
             let answers = {};
@@ -215,21 +358,29 @@ app.post('/api/diagnose', async (req, res) => {
             } catch (e) {
                 console.error('Erro ao parsear answers:', e);
                 return res.status(500).json({ 
-                    error: 'Erro ao processar respostas' 
+                    error: 'Failed to process answers',
+                    code: 'PARSE_ERROR'
                 });
             }
 
             // Calcular score
             console.log('🧮 Calculando score...');
-            const scoreData = scoring.calculateScore(answers, language);
+            const scoreData = scoring.calculateScore(answers, session.language);
 
             // Gerar análise com IA
             console.log('🤖 Gerando análise com IA Gemini...');
             const aiAnalysis = await generateAIAnalysis(
                 scoreData, 
                 answers, 
-                language
+                session.language
             );
+
+            // Parsear report_json se existir
+            let reportData = {
+                gaps: scoreData.gaps || [],
+                strengths: scoreData.strengths || [],
+                profile: scoreData.profile || 'Not specified'
+            };
 
             // Salvar resultado no banco
             await pool.execute(
@@ -246,17 +397,17 @@ app.post('/api/diagnose', async (req, res) => {
                     scoreData.score,
                     scoreData.status,
                     scoreData.statusColor,
-                    JSON.stringify({
-                        gaps: scoreData.gaps,
-                        strengths: scoreData.strengths,
-                        profile: scoreData.profile
-                    }),
+                    JSON.stringify(reportData),
                     aiAnalysis,
                     sessionId
                 ]
             );
 
             console.log('✅ Relatório salvo no banco de dados');
+
+            // Flags de sucesso de notificações
+            let emailSent = false;
+            let whatsappSent = false;
 
             // Enviar email
             console.log('📧 Enviando email...');
@@ -270,7 +421,7 @@ app.post('/api/diagnose', async (req, res) => {
                     scoreData,
                     aiAnalysis,
                     session.access_code,
-                    language
+                    session.language
                 );
                 
                 await pool.execute(
@@ -280,38 +431,46 @@ app.post('/api/diagnose', async (req, res) => {
                     [sessionId]
                 );
                 
+                emailSent = true;
                 console.log('✅ Email enviado com sucesso');
             } catch (emailError) {
-                console.error('❌ Erro ao enviar email:', emailError);
-                // NÃO bloquear o fluxo
+                console.error('❌ Erro ao enviar email:', emailError.message);
             }
 
             // Enviar WhatsApp (se houver número)
             if (session.whatsapp) {
                 console.log('📱 Enviando WhatsApp...');
                 try {
-                    await sendResultNotification(
+                    const whatsappResult = await sendResultNotification(
                         {
-                            firstName: session.first_name,
+                            firstName: session.first_name || 'Candidate',
                             whatsapp: session.whatsapp
                         },
                         scoreData,
                         session.access_code,
-                        language
+                        session.language
                     );
                     
-                    await pool.execute(
-                        `UPDATE alpha_diagnoses 
-                        SET whatsapp_result_sent = 1, whatsapp_result_sent_at = NOW() 
-                        WHERE session_id = ?`,
-                        [sessionId]
-                    );
-                    
-                    console.log('✅ WhatsApp enviado com sucesso');
+                    if (whatsappResult) {
+                        await pool.execute(
+                            `UPDATE alpha_diagnoses 
+                            SET whatsapp_result_sent = 1, whatsapp_result_sent_at = NOW() 
+                            WHERE session_id = ?`,
+                            [sessionId]
+                        );
+                        
+                        whatsappSent = true;
+                        console.log('✅ WhatsApp enviado com sucesso');
+                    }
                 } catch (whatsappError) {
-                    console.error('❌ Erro ao enviar WhatsApp:', whatsappError);
-                    // NÃO bloquear o fluxo
+                    console.error('❌ Erro ao enviar WhatsApp:', whatsappError.message);
                 }
+            }
+
+            // Alerta crítico se NENHUMA notificação foi enviada
+            if (!emailSent && !whatsappSent) {
+                console.error('🚨 CRÍTICO: Nenhuma notificação enviada para', session.email);
+                // TODO: Implementar fallback (queue, retry, admin alert)
             }
 
             // Retornar resultado completo
@@ -325,20 +484,32 @@ app.post('/api/diagnose', async (req, res) => {
                 strengths: scoreData.strengths,
                 aiAnalysis: aiAnalysis,
                 accessCode: session.access_code,
-                ctaRecommended: 'oracle' // SEMPRE Oracle™
+                ctaRecommended: 'oracle',
+                notifications: {
+                    emailSent,
+                    whatsappSent
+                }
             });
         }
 
         // Action não reconhecida
         return res.status(400).json({ 
-            error: 'Action inválida' 
+            error: 'Invalid action',
+            code: 'INVALID_ACTION',
+            validActions: ['START', 'RESPONSE', 'GENERATE_REPORT']
         });
 
     } catch (error) {
         console.error('❌ Erro no diagnose:', error);
+        
+        // Não expor detalhes em produção
+        const errorMessage = process.env.NODE_ENV === 'production' 
+            ? 'Internal server error'
+            : error.message;
+        
         return res.status(500).json({ 
-            error: 'Erro interno do servidor',
-            message: error.message 
+            error: errorMessage,
+            code: 'INTERNAL_ERROR'
         });
     }
 });
@@ -347,9 +518,10 @@ app.post('/api/diagnose', async (req, res) => {
 
 /**
  * Gera código de acesso de 6 caracteres (letras maiúsculas + números)
+ * Remove caracteres confusos: I, O, 0, 1
  */
 function generateAccessCode() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Remove confusos: I, O, 0, 1
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let code = '';
     for (let i = 0; i < 6; i++) {
         code += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -357,14 +529,83 @@ function generateAccessCode() {
     return code;
 }
 
+/**
+ * Gera código de acesso único (verifica no banco)
+ * Previne colisões (probabilidade baixa, mas possível)
+ */
+async function generateUniqueAccessCode() {
+    let code;
+    let attempts = 0;
+    const maxAttempts = 10;
+    
+    do {
+        code = generateAccessCode();
+        
+        // Verificar se já existe
+        const [existing] = await pool.execute(
+            'SELECT id FROM alpha_diagnoses WHERE access_code = ? LIMIT 1',
+            [code]
+        );
+        
+        if (existing.length === 0) {
+            break;
+        }
+        
+        attempts++;
+        console.warn(`⚠️  Código ${code} já existe. Tentando novamente (${attempts}/${maxAttempts})...`);
+        
+    } while (attempts < maxAttempts);
+    
+    if (attempts === maxAttempts) {
+        throw new Error('Failed to generate unique access code after 10 attempts');
+    }
+    
+    return code;
+}
+
+// ============ ERROR HANDLERS ============
+
+// 404 handler
+app.use((req, res) => {
+    res.status(404).json({ 
+        error: 'Route not found',
+        code: 'NOT_FOUND'
+    });
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+    console.error('Unhandled error:', err);
+    
+    res.status(err.status || 500).json({
+        error: process.env.NODE_ENV === 'production' 
+            ? 'Internal server error' 
+            : err.message,
+        code: 'UNHANDLED_ERROR'
+    });
+});
+
 // ============ STARTUP ============
 async function startServer() {
     try {
+        // Validar variáveis de ambiente críticas
+        const requiredEnvVars = [
+            'DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME',
+            'GEMINI_API_KEY',
+            'SENDGRID_API_KEY',
+            'SITE_URL'
+        ];
+        
+        const missingVars = requiredEnvVars.filter(v => !process.env[v]);
+        if (missingVars.length > 0) {
+            console.error('❌ Variáveis de ambiente faltando:', missingVars.join(', '));
+            process.exit(1);
+        }
+
         // Testar conexão com banco
         const connected = await testConnection();
         if (!connected) {
             console.error('❌ Não foi possível conectar ao banco de dados');
-            console.error('   Verifique as variáveis de ambiente e tente novamente');
             process.exit(1);
         }
 
@@ -372,12 +613,13 @@ async function startServer() {
         app.listen(PORT, () => {
             console.log('');
             console.log('='.repeat(60));
-            console.log('🚀 EXPANDSPAIN ALPHA™ - BACKEND INICIADO');
+            console.log('🚀 EXPANDSPAIN ALPHA™ v2.1 - BACKEND OTIMIZADO');
             console.log('='.repeat(60));
             console.log(`   Ambiente: ${process.env.NODE_ENV || 'development'}`);
             console.log(`   Porta: ${PORT}`);
             console.log(`   URL: http://localhost:${PORT}`);
             console.log(`   Health: http://localhost:${PORT}/health`);
+            console.log(`   Rate Limit: 100 req/15min (global), 30 req/hour (diagnose)`);
             console.log('='.repeat(60));
             console.log('');
         });
@@ -398,6 +640,11 @@ process.on('SIGINT', async () => {
     console.log('📴 Recebido SIGINT. Encerrando gracefully...');
     await closePool();
     process.exit(0);
+});
+
+// Capturar unhandled rejections
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('🚨 Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
 // Iniciar

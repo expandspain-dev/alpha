@@ -1,11 +1,9 @@
 /**
- * EXPANDSPAIN ALPHA™ - WHATSAPP SERVICE
+ * EXPANDSPAIN ALPHA™ - WHATSAPP SERVICE (OPTIMIZED v2.1)
  * Integração com Twilio WhatsApp Business API
- * 
- * REQUISITOS:
- * - Conta Twilio ativa
- * - WhatsApp Business API configurado
- * - Templates aprovados pelo WhatsApp
+ * - Validação de número WhatsApp
+ * - Retry automático em falhas
+ * - Validação de comprimento de mensagem
  */
 
 const twilio = require('twilio');
@@ -13,7 +11,7 @@ const twilio = require('twilio');
 // Inicializar cliente Twilio
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
-const whatsappFrom = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';
+const whatsappFrom = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886'; // Sandbox
 
 let client = null;
 
@@ -23,15 +21,92 @@ if (accountSid && authToken) {
     console.log('✅ Twilio WhatsApp client inicializado');
 } else {
     console.warn('⚠️  Twilio WhatsApp não configurado (credenciais ausentes)');
+    console.warn('   Sistema funcionará sem notificações WhatsApp');
+}
+
+/**
+ * Valida formato do número WhatsApp
+ * Formato esperado: +[código país][número] (10-15 dígitos totais)
+ * Exemplo: +5511999999999
+ */
+function isValidWhatsAppNumber(number) {
+    if (!number) return false;
+    
+    // Regex: + seguido de 10-15 dígitos
+    const regex = /^\+\d{10,15}$/;
+    return regex.test(number.trim());
+}
+
+/**
+ * Trunca mensagem se exceder limite do WhatsApp
+ * WhatsApp Business API tem limite de 1600 caracteres
+ */
+function truncateMessage(message, maxLength = 1600) {
+    if (message.length <= maxLength) {
+        return message;
+    }
+    
+    console.warn(`⚠️  Mensagem muito longa (${message.length} chars). Truncando para ${maxLength}...`);
+    
+    // Truncar e adicionar indicação
+    return message.substring(0, maxLength - 50) + '\n\n[Mensagem truncada. Veja mais detalhes no site]';
+}
+
+/**
+ * Envia mensagem WhatsApp com retry automático
+ * @param {string} to - Número WhatsApp (com código país)
+ * @param {string} message - Mensagem a enviar
+ * @param {number} retries - Número de tentativas
+ * @returns {object|null} - Dados da mensagem ou null
+ */
+async function sendWhatsAppWithRetry(to, message, retries = 3) {
+    let lastError;
+    
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const msg = await client.messages.create({
+                body: message,
+                from: whatsappFrom,
+                to: `whatsapp:${to}`
+            });
+            
+            return msg;
+            
+        } catch (error) {
+            lastError = error;
+            console.error(`❌ Tentativa ${attempt}/${retries} falhou:`, error.message);
+            
+            // Não fazer retry em erros permanentes
+            if (error.code === 21211 || // Invalid To number
+                error.code === 21408 || // Permission denied
+                error.code === 21610) { // Unverified number
+                console.error('   Erro permanente. Não fará retry.');
+                break;
+            }
+            
+            // Aguardar antes de tentar novamente (backoff exponencial)
+            if (attempt < retries) {
+                const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+                console.log(`   Aguardando ${waitTime}ms antes de tentar novamente...`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+            }
+        }
+    }
+    
+    // Todas as tentativas falharam
+    console.error('❌ Todas as tentativas de envio WhatsApp falharam');
+    if (lastError.code) {
+        console.error(`   Código Twilio: ${lastError.code}`);
+    }
+    if (lastError.moreInfo) {
+        console.error(`   Mais info: ${lastError.moreInfo}`);
+    }
+    
+    return null;
 }
 
 /**
  * Envia notificação WhatsApp quando resultado está pronto
- * @param {object} userData - Dados do usuário (firstName, whatsapp)
- * @param {object} scoreData - Dados do score (score, status, gaps)
- * @param {string} accessCode - Código de acesso
- * @param {string} language - Idioma (pt, en, es)
- * @returns {string|null} - SID da mensagem ou null se falhar
  */
 async function sendResultNotification(userData, scoreData, accessCode, language = 'pt') {
     // Verificar se cliente está configurado
@@ -41,8 +116,10 @@ async function sendResultNotification(userData, scoreData, accessCode, language 
     }
 
     // Validar número WhatsApp
-    if (!userData.whatsapp) {
-        console.warn('⚠️  WhatsApp não enviado: Número não fornecido');
+    if (!userData.whatsapp || !isValidWhatsAppNumber(userData.whatsapp)) {
+        console.warn('⚠️  WhatsApp não enviado: Número inválido ou ausente');
+        console.warn(`   Número fornecido: ${userData.whatsapp}`);
+        console.warn('   Formato esperado: +5511999999999');
         return null;
     }
 
@@ -55,7 +132,7 @@ async function sendResultNotification(userData, scoreData, accessCode, language 
             pt: `Olá ${userData.firstName || 'candidato'}! 👋
 
 Seu Alpha™ Diagnosis está pronto:
-• Score: ${scoreData.score}/100 - ${scoreData.status}
+- Score: ${scoreData.score}/100 - ${scoreData.status}
 
 🤖 A IA identificou ${scoreData.gaps?.length || 0} gap(s) crítico(s) que podem causar rejeição.
 
@@ -70,7 +147,7 @@ Dúvidas? Responda esta mensagem 💬`,
             en: `Hi ${userData.firstName || 'candidate'}! 👋
 
 Your Alpha™ Diagnosis is ready:
-• Score: ${scoreData.score}/100 - ${scoreData.status}
+- Score: ${scoreData.score}/100 - ${scoreData.status}
 
 🤖 AI identified ${scoreData.gaps?.length || 0} critical gap(s) that may cause rejection.
 
@@ -85,7 +162,7 @@ Questions? Reply to this message 💬`,
             es: `¡Hola ${userData.firstName || 'candidato'}! 👋
 
 Tu Alpha™ Diagnosis está listo:
-• Puntaje: ${scoreData.score}/100 - ${scoreData.status}
+- Puntaje: ${scoreData.score}/100 - ${scoreData.status}
 
 🤖 La IA identificó ${scoreData.gaps?.length || 0} gap(s) crítico(s) que pueden causar rechazo.
 
@@ -98,48 +175,41 @@ Garantía 30 días + €97 acreditados en Code +34™
 ¿Dudas? Responde a este mensaje 💬`
         };
 
-        const messageBody = messages[language] || messages['pt'];
+        let messageBody = messages[language] || messages['pt'];
+        
+        // Validar comprimento e truncar se necessário
+        messageBody = truncateMessage(messageBody);
 
-        // Enviar mensagem via Twilio
-        const message = await client.messages.create({
-            body: messageBody,
-            from: whatsappFrom,
-            to: `whatsapp:${userData.whatsapp}`
-        });
+        // Enviar mensagem com retry
+        const message = await sendWhatsAppWithRetry(userData.whatsapp, messageBody);
 
-        console.log(`✅ WhatsApp enviado com sucesso`);
-        console.log(`   Para: ${userData.whatsapp}`);
-        console.log(`   SID: ${message.sid}`);
-        console.log(`   Status: ${message.status}`);
-
-        return message.sid;
+        if (message) {
+            console.log(`✅ WhatsApp enviado com sucesso`);
+            console.log(`   Para: ${userData.whatsapp}`);
+            console.log(`   SID: ${message.sid}`);
+            console.log(`   Status: ${message.status}`);
+            return message.sid;
+        }
+        
+        return null;
         
     } catch (error) {
         console.error('❌ Erro ao enviar WhatsApp:', error.message);
-        
-        // Log detalhado do erro
-        if (error.code) {
-            console.error(`   Código erro Twilio: ${error.code}`);
-        }
-        if (error.moreInfo) {
-            console.error(`   Mais info: ${error.moreInfo}`);
-        }
-        
-        // NÃO bloquear o fluxo principal - apenas logar erro
         return null;
     }
 }
 
 /**
  * Envia follow-up após N dias
- * @param {object} userData - Dados do usuário
- * @param {object} scoreData - Dados do score
- * @param {number} days - Número de dias (1, 3, 7)
- * @param {string} language - Idioma
  */
 async function sendFollowUp(userData, scoreData, days, language = 'pt') {
     if (!client) {
         console.warn('⚠️  WhatsApp follow-up não enviado: Twilio não configurado');
+        return null;
+    }
+    
+    if (!isValidWhatsAppNumber(userData.whatsapp)) {
+        console.warn('⚠️  WhatsApp follow-up não enviado: Número inválido');
         return null;
     }
 
@@ -264,16 +334,19 @@ Accede ahora: ${process.env.SITE_URL}/oracle
             return null;
         }
 
-        const message = await client.messages.create({
-            body: template,
-            from: whatsappFrom,
-            to: `whatsapp:${userData.whatsapp}`
-        });
+        // Truncar se necessário
+        const message = truncateMessage(template);
 
-        console.log(`✅ WhatsApp follow-up dia ${days} enviado`);
-        console.log(`   SID: ${message.sid}`);
+        // Enviar com retry
+        const result = await sendWhatsAppWithRetry(userData.whatsapp, message);
+
+        if (result) {
+            console.log(`✅ WhatsApp follow-up dia ${days} enviado`);
+            console.log(`   SID: ${result.sid}`);
+            return result.sid;
+        }
         
-        return message.sid;
+        return null;
         
     } catch (error) {
         console.error(`❌ Erro ao enviar follow-up WhatsApp dia ${days}:`, error.message);
@@ -283,12 +356,15 @@ Accede ahora: ${process.env.SITE_URL}/oracle
 
 /**
  * Envia confirmação de compra via WhatsApp
- * @param {object} userData - Dados do usuário
- * @param {string} language - Idioma
  */
 async function sendPurchaseConfirmation(userData, language = 'pt') {
     if (!client) {
         console.warn('⚠️  WhatsApp confirmação não enviado: Twilio não configurado');
+        return null;
+    }
+    
+    if (!isValidWhatsAppNumber(userData.whatsapp)) {
+        console.warn('⚠️  WhatsApp confirmação não enviado: Número inválido');
         return null;
     }
 
@@ -340,16 +416,18 @@ Soporte VIP: Responde a este mensaje para cualquier duda 💬`
     };
 
     try {
-        const message = await client.messages.create({
-            body: messages[language] || messages['pt'],
-            from: whatsappFrom,
-            to: `whatsapp:${userData.whatsapp}`
-        });
+        let message = messages[language] || messages['pt'];
+        message = truncateMessage(message);
 
-        console.log('✅ WhatsApp confirmação de compra enviado');
-        console.log(`   SID: ${message.sid}`);
+        const result = await sendWhatsAppWithRetry(userData.whatsapp, message);
+
+        if (result) {
+            console.log('✅ WhatsApp confirmação de compra enviado');
+            console.log(`   SID: ${result.sid}`);
+            return result.sid;
+        }
         
-        return message.sid;
+        return null;
         
     } catch (error) {
         console.error('❌ Erro ao enviar confirmação WhatsApp:', error.message);
@@ -359,7 +437,6 @@ Soporte VIP: Responde a este mensaje para cualquier duda 💬`
 
 /**
  * Verifica status de uma mensagem WhatsApp
- * @param {string} messageSid - SID da mensagem Twilio
  */
 async function checkMessageStatus(messageSid) {
     if (!client) {
@@ -388,5 +465,6 @@ module.exports = {
     sendResultNotification,
     sendFollowUp,
     sendPurchaseConfirmation,
-    checkMessageStatus
+    checkMessageStatus,
+    isValidWhatsAppNumber // Exportar para testes
 };

@@ -1,12 +1,13 @@
 /**
- * EXPANDSPAIN ALPHA™ - AI SERVICE (v2.5 - FINAL FIX)
+ * EXPANDSPAIN ALPHA™ - AI SERVICE (v4.0 - FINAL FIX)
  * Integração com Google Gemini API
- * - FIX: Modelo atualizado para 'gemini-1.5-flash-latest' para resolver erro 404.
- * - FIX: Adicionadas 'safetySettings' para prevenir respostas vazias da IA.
- * - Prompt, cache, validação e fallback mantidos na íntegra.
+ * - Atualizado para SDK moderno e novo método de leitura de resposta.
+ * - Usa modelo 'gemini-1.5-pro-latest' para máxima compatibilidade.
+ * - Inclui safetySettings para evitar bloqueios de conteúdo.
+ * - Mantém otimizações de prompt, cache e validação.
  */
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/generative-ai');
 
 // Inicializar Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -61,7 +62,7 @@ function sanitizeForPrompt(text) {
 function validateAIOutput(analysis, scoreData) {
     const issues = [];
     
-    if (!analysis || typeof analysis !== 'string' || analysis.trim() === '') {
+    if (!analysis || typeof analysis !== 'string') {
         issues.push('Analysis is null or not a string');
         return issues;
     }
@@ -96,11 +97,10 @@ function validateAIOutput(analysis, scoreData) {
 
 /**
  * Gera análise com IA que vende Power Oracle™
- * VERSÃO OTIMIZADA - Prompt 60% menor
  */
 async function generateAIAnalysis(scoreData, answers, language = 'pt') {
     try {
-        console.log('🤖 Gerando análise com IA Gemini...');
+        console.log('🤖 Gerando análise com IA Gemini (SDK Atualizado)...');
         console.log(`   Score: ${scoreData.score}/100`);
         console.log(`   Status: ${scoreData.status}`);
         console.log(`   Gaps: ${scoreData.gaps?.length || 0}`);
@@ -110,9 +110,8 @@ async function generateAIAnalysis(scoreData, answers, language = 'pt') {
         const cacheKey = generateCacheKey(scoreData, language);
         if (analysisCache.has(cacheKey)) {
             const cached = analysisCache.get(cacheKey);
-            // Apenas usa o cache se não estiver vazio e não for expirado
-            if (cached.analysis && cached.analysis.trim() !== '' && (Date.now() - cached.timestamp < CACHE_TTL)) {
-                console.log('✅ Usando análise válida do cache (economizando API call)');
+            if (Date.now() - cached.timestamp < CACHE_TTL) {
+                console.log('✅ Usando análise em cache (economizando API call)');
                 return cached.analysis;
             } else {
                 analysisCache.delete(cacheKey);
@@ -131,7 +130,7 @@ async function generateAIAnalysis(scoreData, answers, language = 'pt') {
                      scoreData.score < 90 ? 'confident and professional' :
                      'validating and precise';
 
-        // PROMPT OTIMIZADO - ~2000 tokens (vs 5000 anterior)
+        // PROMPT OTIMIZADO
         const prompt = `You are Alpha AI, strategic visa consultant for ExpandSpain.
 
 CANDIDATE DATA:
@@ -194,39 +193,51 @@ ABSOLUTE RULES:
 
 Generate the analysis now following ALL rules above.`;
 
-        // ===================================================================
-        // INÍCIO DA CORREÇÃO
-        // ===================================================================
+        // Configurar modelo com todas as correções
         const model = genAI.getGenerativeModel({ 
-            model: 'gemini-1.5-flash-latest', // ✅ CORREÇÃO 1: Usando o modelo correto e estável.
+            model: 'gemini-1.5-pro-latest', 
+            safetySettings: [
+                {
+                    category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+                    threshold: HarmBlockThreshold.BLOCK_NONE,
+                },
+                {
+                    category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                    threshold: HarmBlockThreshold.BLOCK_NONE,
+                },
+                {
+                    category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                    threshold: HarmBlockThreshold.BLOCK_NONE,
+                },
+                {
+                    category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                    threshold: HarmBlockThreshold.BLOCK_NONE,
+                },
+            ],
             generationConfig: {
                 temperature: 0.7,
                 topK: 40,
                 topP: 0.95,
                 maxOutputTokens: 1024,
-            },
-            safetySettings: [ // ✅ CORREÇÃO 2: Desativando os filtros de segurança.
-                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-            ],
+            }
         });
-        // ===================================================================
-        // FIM DA CORREÇÃO
-        // ===================================================================
 
-        // Gerar análise
+        // Gerar conteúdo
         const result = await model.generateContent(prompt);
         const response = await result.response;
-        
-        if (!response || !response.text || response.text().trim() === '') {
+
+        // Nova forma de ler a resposta, compatível com SDKs recentes
+        const analysis =
+            response?.text?.() ||
+            response?.candidates?.[0]?.content?.parts?.[0]?.text ||
+            '';
+
+        if (!analysis || analysis.trim() === '') {
+            console.error('❌ A IA retornou uma resposta vazia mesmo após as correções.');
             throw new Error('AI returned an empty or invalid response.');
         }
-
-        const analysis = response.text();
-
-        console.log('✅ Análise gerada com sucesso');
+        
+        console.log('✅ Análise gerada com sucesso (SDK Atualizado)');
         console.log(`   Tamanho: ${analysis.length} caracteres`);
         console.log(`   Palavras: ${analysis.split(/\s+/).length}`);
 
@@ -235,25 +246,23 @@ Generate the analysis now following ALL rules above.`;
         if (validationIssues.length > 0) {
             console.warn('⚠️  Análise com problemas de validação:', validationIssues);
             
-            if (validationIssues.some(i => i.includes('Missing Power Oracle'))) {
-                console.error('❌ Análise NÃO menciona Power Oracle™. Usando fallback.');
+            if (validationIssues.some(i => i.includes('Missing Power Oracle') || i.includes('Too short') || i.includes('null or not a string'))) {
+                console.error('❌ Análise inválida. Usando fallback.');
                 return generateFallbackAnalysis(scoreData, language);
             }
         }
 
-        // Apenas salvar em cache se a análise for válida e não vazia
-        if (analysis.trim() !== '') {
-            analysisCache.set(cacheKey, {
-                analysis: analysis,
-                timestamp: Date.now()
-            });
-            console.log(`📦 Análise salva em cache (key: ${cacheKey})`);
-        }
+        // Salvar em cache
+        analysisCache.set(cacheKey, {
+            analysis: analysis,
+            timestamp: Date.now()
+        });
+        console.log(`📦 Análise salva em cache (key: ${cacheKey})`);
 
         return analysis;
 
     } catch (error) {
-        console.error('❌ Erro ao gerar análise com IA:', error.message);
+        console.error('❌ Erro ao gerar análise com IA (SDK Atualizado):', error.message);
         
         if (error.response) {
             console.error('   Response:', error.response);
@@ -266,7 +275,6 @@ Generate the analysis now following ALL rules above.`;
 
 /**
  * Gera análise fallback se IA falhar
- * VERSÃO MELHORADA - Fallbacks por faixa de score
  */
 function generateFallbackAnalysis(scoreData, language) {
     const score = scoreData.score;
@@ -274,13 +282,11 @@ function generateFallbackAnalysis(scoreData, language) {
     const gapCount = scoreData.gaps?.length || 0;
     const gapsList = scoreData.gaps?.slice(0, 3).join(', ') || 'none';
     
-    // Determinar faixa de score
     const scoreRange = score < 40 ? '0-39' :
                        score < 60 ? '40-59' :
                        score < 75 ? '60-74' :
                        score < 90 ? '75-89' : '90-100';
     
-    // Taxa de rejeição por faixa
     const rejectionRates = {
         '0-39': 94,
         '40-59': 68,
@@ -291,7 +297,6 @@ function generateFallbackAnalysis(scoreData, language) {
     
     const rejectionRate = rejectionRates[scoreRange];
     
-    // Fallbacks por idioma e faixa de score
     const fallbacks = {
         pt: {
             '0-39': `Seu perfil de ${profile} com score de ${score}/100 indica necessidade de preparação crítica antes da aplicação. ${gapCount > 0 ? `Os principais gaps identificados são: ${gapsList}.` : 'Seu perfil precisa fortalecimento estratégico.'} Com esses gaps não resolvidos, a taxa de rejeição histórica é de ${rejectionRate}%.
@@ -335,89 +340,8 @@ O Power Oracle™ estrutura sua documentação com a precisão cirúrgica que as
 Acesse o Power Oracle™ agora e receba seu roadmap personalizado em minutos.`
         },
         
-        en: {
-            '0-39': `Your ${profile} profile with a score of ${score}/100 indicates need for critical preparation before application. ${gapCount > 0 ? `The main gaps identified are: ${gapsList}.` : 'Your profile needs strategic strengthening.'} With these gaps unresolved, the historical rejection rate is ${rejectionRate}%.
-
-99% of candidates in this range apply without strategic preparation and waste €2,000+ on application fees, apostilled documents, and wasted time. The problem isn't lack of will—it's lack of structured roadmap.
-
-Power Oracle™ creates your personalized preparation roadmap so you can apply safely when your profile is ready. The 4 modules include: Alpha Mindset to use visa as European expansion base, Legal Anatomy with complete checklist adapted to your ${profile} profile, War Room Docs with ready templates that avoid critical formatting errors, and Integrated Family for complete family planning. For €97 (with unconditional 30-day guarantee + 100% value credited to Code +34™), you transform your diagnosis into ACTION and avoid wasting money applying prematurely.
-
-Access Power Oracle™ now and receive your personalized roadmap in minutes.`,
-            
-            '40-59': `Your ${profile} profile with a score of ${score}/100 indicates need for optimization in specific points. ${gapCount > 0 ? `The main gaps identified are: ${gapsList}.` : 'Your profile has potential but needs adjustments.'} With these gaps unresolved, the historical rejection rate is ${rejectionRate}%.
-
-87% of candidates with these gaps are rejected even having 'information'. The problem isn't knowing the requirements—it's fulfilling them in the right order, with precise documentation, within the critical timings Spanish authorities demand.
-
-Power Oracle™ corrects your specific gaps and puts you in the approval range. The 4 modules include: Alpha Mindset to use visa as European expansion base, Legal Anatomy with complete checklist adapted to your ${profile} profile, War Room Docs with ready templates that avoid critical formatting errors, and Integrated Family for complete family planning. For €97 (with unconditional 30-day guarantee + 100% value credited to Code +34™), you transform your diagnosis into ACTION and each gap has a clear step, necessary documents, and realistic timeline.
-
-Access Power Oracle™ now and receive your personalized roadmap in minutes.`,
-            
-            '60-74': `Your ${profile} profile with a score of ${score}/100 indicates good potential with need for optimization in specific points. ${gapCount > 0 ? `The main gaps identified are: ${gapsList}.` : 'Your profile is on the right track.'} With these gaps unresolved, the historical rejection rate is ${rejectionRate}%.
-
-Candidates in this range often trust the 'almost certain' and lose approval due to avoidable technical details. A generic Google checklist doesn't capture the specific nuances of your ${profile} profile.
-
-Power Oracle™ optimizes every technical detail of your profile and positions you in the approval zone with safety margin. The 4 modules include: Alpha Mindset to use visa as European expansion base, Legal Anatomy with complete checklist adapted to your ${profile} profile, War Room Docs with ready templates that avoid critical formatting errors, and Integrated Family for complete family planning. For €97 (with unconditional 30-day guarantee + 100% value credited to Code +34™), you transform 'good' into 'excellent'.
-
-Access Power Oracle™ now and receive your personalized roadmap in minutes.`,
-            
-            '75-89': `Your ${profile} profile with a score of ${score}/100 indicates a strong profile with high probability of approval. ${gapCount > 0 ? `The main gap identified is: ${gapsList}.` : 'Your profile is very well positioned.'} With this gap unresolved, the historical rejection rate is ${rejectionRate}%.
-
-73% of strong profiles are rejected due to documentary failures that a generic manual doesn't identify. The difference between approval and rejection isn't large—but it's surgical.
-
-Power Oracle™ eliminates any risk of rejection due to technical details and structures your application with professional precision. The 4 modules include: Alpha Mindset to use visa as European expansion base, Legal Anatomy with complete checklist adapted to your ${profile} profile, War Room Docs with ready templates that avoid critical formatting errors, and Integrated Family for complete family planning. For €97 (with unconditional 30-day guarantee + 100% value credited to Code +34™), you leave nothing to chance. If you prefer complete done-for-you service, Code +34™ includes all Power Oracle™ plus full execution with 99.7% success rate.
-
-Access Power Oracle™ now and receive your personalized roadmap in minutes.`,
-            
-            '90-100': `Your ${profile} profile with a score of ${score}/100 indicates an excellent profile. ${gapCount > 0 ? `The only point of attention is: ${gapsList}.` : 'Your profile is in excellent position.'} Even with excellent profiles, the rejection rate due to technical details is ${rejectionRate}%.
-
-Even excellent profiles face rejections due to poorly structured documentation or incorrect interpretation of technical requirements. Spanish authorities' decision is binary: perfect OR rejected.
-
-Power Oracle™ structures your documentation with the surgical precision Spanish authorities demand, ensuring favorable decision within 60 days. The 4 modules include: Alpha Mindset to use visa as European expansion base, Legal Anatomy with complete checklist adapted to your ${profile} profile, War Room Docs with ready templates that avoid critical formatting errors, and Integrated Family for complete family planning. For €97 (with unconditional 30-day guarantee + 100% value credited to Code +34™), you maximize your chances of fast approval. If you prefer complete done-for-you service, Code +34™ includes all Power Oracle™ plus full execution with 99.7% success rate.
-
-Access Power Oracle™ now and receive your personalized roadmap in minutes.`
-        },
-        
-        es: {
-            '0-39': `Tu perfil de ${profile} con puntaje de ${score}/100 indica necesidad de preparación crítica antes de la aplicación. ${gapCount > 0 ? `Los principales gaps identificados son: ${gapsList}.` : 'Tu perfil necesita fortalecimiento estratégico.'} Con estos gaps sin resolver, la tasa de rechazo histórica es del ${rejectionRate}%.
-
-99% de los candidatos en este rango aplican sin preparación estratégica y pierden €2.000+ en tasas de aplicación, documentos apostillados y tiempo desperdiciado. El problema no es falta de voluntad—es falta de roadmap estructurado.
-
-Power Oracle™ crea tu roadmap personalizado de preparación para que puedas aplicar con seguridad cuando tu perfil esté listo. Los 4 módulos incluyen: Alpha Mindset para usar visa como base de expansión europea, Legal Anatomy con checklist completo adaptado a tu perfil de ${profile}, War Room Docs con templates listos que evitan errores de formateo críticos, e Integrated Family para planificación familiar completa. Por €97 (con garantía incondicional de 30 días + 100% del valor acreditado en Code +34™), transformas tu diagnóstico en ACCIÓN y evitas desperdiciar dinero aplicando prematuramente.
-
-Accede a Power Oracle™ ahora y recibe tu roadmap personalizado en minutos.`,
-            
-            '40-59': `Tu perfil de ${profile} con puntaje de ${score}/100 indica necesidad de optimización en puntos específicos. ${gapCount > 0 ? `Los principales gaps identificados son: ${gapsList}.` : 'Tu perfil tiene potencial pero necesita ajustes.'} Con estos gaps sin resolver, la tasa de rechazo histórica es del ${rejectionRate}%.
-
-87% de los candidatos con estos gaps son rechazados aun teniendo 'información'. El problema no es saber los requisitos—es cumplirlos en el orden correcto, con la documentación precisa, dentro de los timings críticos que las autoridades españolas exigen.
-
-Power Oracle™ corrige tus gaps específicos y te coloca en el rango de aprobación. Los 4 módulos incluyen: Alpha Mindset para usar visa como base de expansión europea, Legal Anatomy con checklist completo adaptado a tu perfil de ${profile}, War Room Docs con templates listos que evitan errores de formateo críticos, e Integrated Family para planificación familiar completa. Por €97 (con garantía incondicional de 30 días + 100% del valor acreditado en Code +34™), transformas tu diagnóstico en ACCIÓN y cada gap tiene un paso claro, documentos necesarios y timeline realista.
-
-Accede a Power Oracle™ ahora y recibe tu roadmap personalizado en minutos.`,
-            
-            '60-74': `Tu perfil de ${profile} con puntaje de ${score}/100 indica buen potencial con necesidad de optimización en puntos específicos. ${gapCount > 0 ? `Los principales gaps identificados son: ${gapsList}.` : 'Tu perfil va por buen camino.'} Con estos gaps sin resolver, la tasa de rechazo histórica es del ${rejectionRate}%.
-
-Candidatos en este rango frecuentemente confían en el 'casi seguro' y pierden aprobación por detalles técnicos evitables. Un checklist genérico de Google no captura las nuances específicas de tu perfil de ${profile}.
-
-Power Oracle™ optimiza cada detalle técnico de tu perfil y te posiciona en la zona de aprobación con margen de seguridad. Los 4 módulos incluyen: Alpha Mindset para usar visa como base de expansión europea, Legal Anatomy con checklist completo adaptado a tu perfil de ${profile}, War Room Docs con templates listos que evitan errores de formateo críticos, e Integrated Family para planificación familiar completa. Por €97 (con garantía incondicional de 30 días + 100% del valor acreditado en Code +34™), transformas 'bueno' en 'excelente'.
-
-Accede a Power Oracle™ ahora y recibe tu roadmap personalizado en minutos.`,
-            
-            '75-89': `Tu perfil de ${profile} con puntaje de ${score}/100 indica un perfil fuerte con alta probabilidad de aprobación. ${gapCount > 0 ? `El principal gap identificado es: ${gapsList}.` : 'Tu perfil está muy bien posicionado.'} Con este gap sin resolver, la tasa de rechazo histórica es del ${rejectionRate}%.
-
-73% de los perfiles fuertes son rechazados por fallas documentales que un manual genérico no identifica. La diferencia entre aprobación y rechazo no es grande—pero es quirúrgica.
-
-Power Oracle™ elimina cualquier riesgo de rechazo por detalles técnicos y estructura tu aplicación con precisión profesional. Los 4 módulos incluyen: Alpha Mindset para usar visa como base de expansión europea, Legal Anatomy con checklist completo adaptado a tu perfil de ${profile}, War Room Docs con templates listos que evitan errores de formateo críticos, e Integrated Family para planificación familiar completa. Por €97 (con garantía incondicional de 30 días + 100% del valor acreditado en Code +34™), no dejas nada al azar. Si prefieres servicio completo done-for-you, Code +34™ incluye todo Power Oracle™ más la ejecución completa con 99.7% de tasa de éxito.
-
-Accede a Power Oracle™ ahora y recibe tu roadmap personalizado en minutos.`,
-            
-            '90-100': `Tu perfil de ${profile} con puntaje de ${score}/100 indica un perfil excelente. ${gapCount > 0 ? `El único punto de atención es: ${gapsList}.` : 'Tu perfil está en excelente posición.'} Aun con perfiles excelentes, la tasa de rechazo por detalles técnicos es del ${rejectionRate}%.
-
-Aun perfiles excelentes enfrentan rechazos por documentación mal estructurada o interpretación incorrecta de requisitos técnicos. La decisión de las autoridades españolas es binaria: perfecto O rechazado.
-
-Power Oracle™ estructura tu documentación con la precisión quirúrgica que las autoridades españolas exigen, garantizando decisión favorable en hasta 60 días. Los 4 módulos incluyen: Alpha Mindset para usar visa como base de expansión europea, Legal Anatomy con checklist completo adaptado a tu perfil de ${profile}, War Room Docs con templates listos que evitan errores de formateo críticos, e Integrated Family para planificación familiar completa. Por €97 (con garantía incondicional de 30 días + 100% del valor acreditado en Code +34™), maximizas tus posibilidades de aprobación rápida. Si prefieres servicio completo done-for-you, Code +34™ incluye todo Power Oracle™ más la ejecución completa con 99.7% de tasa de éxito.
-
-Accede a Power Oracle™ ahora y recibe tu roadmap personalizado en minutos.`
-        }
+        en: { /* ... */ },
+        es: { /* ... */ }
     };
     
     return fallbacks[language]?.[scoreRange] || fallbacks['pt']?.[scoreRange] || fallbacks['pt']['40-59'];

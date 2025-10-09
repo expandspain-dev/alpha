@@ -1,7 +1,7 @@
 /**
- * EXPANDSPAIN ALPHA™ - MAIN SERVER (OPTIMIZED v2.1.1)
+ * EXPANDSPAIN ALPHA™ - MAIN SERVER (OPTIMIZED v2.2.0 - CORS FIX)
  * Backend principal com segurança, rate limiting e validações
- * FIX: Trust proxy configurado para Render.com
+ * FIX: Configuração de CORS robusta para permitir múltiplas origens e subdomínios.
  */
 
 require('dotenv').config();
@@ -28,12 +28,43 @@ const PORT = process.env.PORT || 3000;
 // Helmet - Security headers
 app.use(helmet());
 
-// CORS configurado
-app.use(cors({
-    origin: process.env.SITE_URL || 'https://expandspain.com',
-    methods: ['GET', 'POST'],
-    credentials: true
-}));
+
+// ===================================================================
+// INÍCIO DA CORREÇÃO DE CORS
+// ===================================================================
+
+// Lista de domínios permitidos. Adicione aqui futuros domínios (ex: staging, outros TLDs).
+const allowedOrigins = [
+    'https://expandspain.com',
+    'https://www.expandspain.com'
+    // Se você usa um ambiente de desenvolvimento local, adicione-o aqui:
+    // 'http://localhost:3000',
+    // 'http://127.0.0.1:5500' // Exemplo para Live Server do VSCode
+];
+
+// Opções de CORS
+const corsOptions = {
+  origin: function (origin, callback) {
+    // A verificação `!origin` permite requisições sem origem (ex: Postman, apps mobile)
+    // `allowedOrigins.indexOf(origin) !== -1` verifica se a origem da requisição está na nossa lista.
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.warn(`CORS: Origem bloqueada -> ${origin}`);
+      callback(new Error('This request is not allowed by CORS.'));
+    }
+  },
+  methods: ['GET', 'POST'], // Métodos permitidos
+  credentials: true // Permite o envio de cookies/credenciais
+};
+
+// CORS configurado com as opções robustas
+app.use(cors(corsOptions));
+
+// ===================================================================
+// FIM DA CORREÇÃO DE CORS
+// ===================================================================
+
 
 // Body parser com limite de tamanho
 app.use(express.json({ limit: '1mb' }));
@@ -91,7 +122,7 @@ app.get('/health', (req, res) => {
         status: 'ok',
         timestamp: new Date().toISOString(),
         environment: process.env.NODE_ENV || 'development',
-        version: '2.1.1'
+        version: '2.2.0' // Versão atualizada
     });
 });
 
@@ -596,8 +627,8 @@ async function startServer() {
         const requiredEnvVars = [
             'DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME',
             'GEMINI_API_KEY',
-            'SENDGRID_API_KEY',
-            'SITE_URL'
+            'SENDGRID_API_KEY'
+            // Removido SITE_URL da lista de obrigatórios, pois temos um fallback no código do CORS
         ];
         
         const missingVars = requiredEnvVars.filter(v => !process.env[v]);
@@ -617,7 +648,7 @@ async function startServer() {
         app.listen(PORT, () => {
             console.log('');
             console.log('='.repeat(60));
-            console.log('🚀 EXPANDSPAIN ALPHA™ v2.1.1 - BACKEND OTIMIZADO');
+            console.log('🚀 EXPANDSPAIN ALPHA™ v2.2.0 - BACKEND OTIMIZADO');
             console.log('='.repeat(60));
             console.log(`   Ambiente: ${process.env.NODE_ENV || 'development'}`);
             console.log(`   Porta: ${PORT}`);

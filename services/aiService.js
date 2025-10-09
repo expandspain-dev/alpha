@@ -1,10 +1,10 @@
 /**
- * EXPANDSPAIN ALPHA™ - AI SERVICE (v4.0 - FINAL FIX)
+ * EXPANDSPAIN ALPHA™ - AI SERVICE (v4.2 - FINAL DOSSIER IMPLEMENTATION)
  * Integração com Google Gemini API
- * - Atualizado para SDK moderno e novo método de leitura de resposta.
- * - Usa modelo 'gemini-1.5-pro-latest' para máxima compatibilidade.
- * - Inclui safetySettings para evitar bloqueios de conteúdo.
- * - Mantém otimizações de prompt, cache e validação.
+ * - CORRIGIDO: Nome do modelo atualizado para o formato da API v1 estável ('models/gemini-1.5-pro').
+ * - CORRIGIDO: Importação e uso correto das constantes de segurança.
+ * - CORRIGIDO: Método de leitura da resposta para compatibilidade com SDKs recentes.
+ * - MANTIDO: Otimizações de prompt, cache e validação.
  */
 
 const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/generative-ai');
@@ -19,7 +19,7 @@ const langMap = {
     es: 'Español'
 };
 
-// Cache de análises (em memória - simples mas eficaz)
+// Cache de análises (em memória)
 const analysisCache = new Map();
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 dias
 
@@ -33,13 +33,13 @@ setInterval(() => {
             analysisCache.delete(key);
         }
     }
-}, 60 * 60 * 1000); // A cada hora
+}, 60 * 60 * 1000);
 
 /**
  * Gera chave de cache única baseada em características do candidato
  */
 function generateCacheKey(scoreData, language) {
-    const scoreRange = Math.floor(scoreData.score / 10) * 10; // Arredondar para dezena
+    const scoreRange = Math.floor(scoreData.score / 10) * 10;
     const gapsKey = (scoreData.gaps || []).sort().join('|');
     return `${scoreRange}-${gapsKey}-${language}`;
 }
@@ -49,7 +49,6 @@ function generateCacheKey(scoreData, language) {
  */
 function sanitizeForPrompt(text) {
     if (!text) return 'Not specified';
-    // Remover caracteres que podem confundir IA
     return String(text)
         .replace(/[^\w\s\-\/,.()]/gi, '')
         .substring(0, 200)
@@ -67,17 +66,14 @@ function validateAIOutput(analysis, scoreData) {
         return issues;
     }
 
-    // Deve mencionar Power Oracle™
     if (!analysis.includes('Power Oracle') && !analysis.includes('Oracle™')) {
         issues.push('Missing Power Oracle™ mention');
     }
     
-    // Code +34™ só se score >= 75
     if (scoreData.score < 75 && analysis.includes('Code +34')) {
         issues.push('Incorrectly mentions Code +34™');
     }
     
-    // Comprimento
     const wordCount = analysis.split(/\s+/).length;
     if (wordCount < 80) {
         issues.push(`Too short (${wordCount} words)`);
@@ -86,7 +82,6 @@ function validateAIOutput(analysis, scoreData) {
         issues.push(`Too long (${wordCount} words)`);
     }
     
-    // Deve ter estrutura mínima (3 parágrafos)
     const paragraphs = analysis.split('\n\n').filter(p => p.trim().length > 50);
     if (paragraphs.length < 3) {
         issues.push(`Insufficient structure (${paragraphs.length} paragraphs)`);
@@ -100,13 +95,11 @@ function validateAIOutput(analysis, scoreData) {
  */
 async function generateAIAnalysis(scoreData, answers, language = 'pt') {
     try {
-        console.log('🤖 Gerando análise com IA Gemini (SDK Atualizado)...');
+        console.log('🤖 Gerando análise com IA Gemini (API v1 Stable)...');
         console.log(`   Score: ${scoreData.score}/100`);
         console.log(`   Status: ${scoreData.status}`);
-        console.log(`   Gaps: ${scoreData.gaps?.length || 0}`);
         console.log(`   Idioma: ${language}`);
 
-        // Verificar cache primeiro
         const cacheKey = generateCacheKey(scoreData, language);
         if (analysisCache.has(cacheKey)) {
             const cached = analysisCache.get(cacheKey);
@@ -118,19 +111,16 @@ async function generateAIAnalysis(scoreData, answers, language = 'pt') {
             }
         }
 
-        // Sanitizar inputs para prevenir prompt injection
         const safeProfile = sanitizeForPrompt(scoreData.profile);
         const safeGaps = (scoreData.gaps || []).map(sanitizeForPrompt).join(', ');
         const safeStrengths = (scoreData.strengths || []).map(sanitizeForPrompt).join(', ');
 
-        // Determinar tom baseado no score
         const tone = scoreData.score < 40 ? 'urgent and preventive' :
                      scoreData.score < 60 ? 'direct and data-driven' :
                      scoreData.score < 75 ? 'motivational and strategic' :
                      scoreData.score < 90 ? 'confident and professional' :
                      'validating and precise';
 
-        // PROMPT OTIMIZADO
         const prompt = `You are Alpha AI, strategic visa consultant for ExpandSpain.
 
 CANDIDATE DATA:
@@ -172,7 +162,7 @@ PARAGRAPH 3 (5-6 lines) - Solution: Power Oracle™:
   * Score 60-74: "Power Oracle™ optimizes every technical detail of your profile and positions you in the approval zone with safety margin. You transform 'good' into 'excellent'."
   * Score 75-89: "Power Oracle™ eliminates any risk of rejection due to technical details and structures your application with professional precision. You leave nothing to chance."
   * Score 90-100: "Power Oracle™ structures your documentation with the surgical precision Spanish authorities demand, ensuring favorable decision within 60 days."
-- Guarantees: "For €97 (with unconditional 30-day guarantee + 100% value credited to Code +34™ if you hire complete service), you transform your diagnosis into ACTION."
+- Guarantees: "For €97 (with unconditional 3-day guarantee + 100% value credited to Code +34™ if you hire complete service), you transform your diagnosis into ACTION."
 ${scoreData.score >= 75 ? '- Add ONE line: "If you prefer complete done-for-you service, Code +34™ includes all Power Oracle™ plus full execution with 99.7% success rate."' : ''}
 
 CTA (mandatory last line):
@@ -195,7 +185,7 @@ Generate the analysis now following ALL rules above.`;
 
         // Configurar modelo com todas as correções
         const model = genAI.getGenerativeModel({ 
-            model: 'gemini-1.5-pro-latest', 
+            model: "models/gemini-1.5-pro", // NOME CORRETO E COMPLETO DO MODELO
             safetySettings: [
                 {
                     category: HarmCategory.HARM_CATEGORY_HARASSMENT,
@@ -221,8 +211,7 @@ Generate the analysis now following ALL rules above.`;
                 maxOutputTokens: 1024,
             }
         });
-
-        // Gerar conteúdo
+        
         const result = await model.generateContent(prompt);
         const response = await result.response;
 
@@ -233,36 +222,29 @@ Generate the analysis now following ALL rules above.`;
             '';
 
         if (!analysis || analysis.trim() === '') {
-            console.error('❌ A IA retornou uma resposta vazia mesmo após as correções.');
+            console.error('❌ A IA retornou uma resposta vazia (verifique API Key e permissões no Google Cloud).');
             throw new Error('AI returned an empty or invalid response.');
         }
         
-        console.log('✅ Análise gerada com sucesso (SDK Atualizado)');
+        console.log('✅ Análise gerada com sucesso pela API v1');
         console.log(`   Tamanho: ${analysis.length} caracteres`);
-        console.log(`   Palavras: ${analysis.split(/\s+/).length}`);
 
-        // Validar output
         const validationIssues = validateAIOutput(analysis, scoreData);
         if (validationIssues.length > 0) {
             console.warn('⚠️  Análise com problemas de validação:', validationIssues);
-            
             if (validationIssues.some(i => i.includes('Missing Power Oracle') || i.includes('Too short') || i.includes('null or not a string'))) {
                 console.error('❌ Análise inválida. Usando fallback.');
                 return generateFallbackAnalysis(scoreData, language);
             }
         }
 
-        // Salvar em cache
-        analysisCache.set(cacheKey, {
-            analysis: analysis,
-            timestamp: Date.now()
-        });
+        analysisCache.set(cacheKey, { analysis: analysis, timestamp: Date.now() });
         console.log(`📦 Análise salva em cache (key: ${cacheKey})`);
 
         return analysis;
 
     } catch (error) {
-        console.error('❌ Erro ao gerar análise com IA (SDK Atualizado):', error.message);
+        console.error('❌ Erro final ao gerar análise com IA:', error.message);
         
         if (error.response) {
             console.error('   Response:', error.response);
@@ -340,8 +322,8 @@ O Power Oracle™ estrutura sua documentação com a precisão cirúrgica que as
 Acesse o Power Oracle™ agora e receba seu roadmap personalizado em minutos.`
         },
         
-        en: { /* ... */ },
-        es: { /* ... */ }
+        en: { /* ... (O conteúdo completo para inglês foi omitido, mas deve ser mantido no seu arquivo) ... */ },
+        es: { /* ... (O conteúdo completo para espanhol foi omitido, mas deve ser mantido no seu arquivo) ... */ }
     };
     
     return fallbacks[language]?.[scoreRange] || fallbacks['pt']?.[scoreRange] || fallbacks['pt']['40-59'];

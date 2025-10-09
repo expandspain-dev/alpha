@@ -1,13 +1,11 @@
 /**
- * EXPANDSPAIN ALPHA™ - MAIN SERVER v3.1.0 (NUMERIC CODE FIX)
+ * EXPANDSPAIN ALPHA™ - MAIN SERVER v3.1.1 (INSERT FIX)
  * 
- * CHANGELOG v3.1.0:
- * ✅ CRÍTICO: Corrigido bug de validação na action VERIFY_CODE.
- * ✅ MELHORADO: Código de verificação agora é numérico (6 dígitos) para melhor UX.
- * ✅ MELHORADO: Atualizada a validação para esperar um código numérico.
+ * CHANGELOG v3.1.1:
+ * ✅ CRÍTICO: Corrigido erro "Column count doesn't match value count" na ação START.
  * 
  * @author ExpandSpain Team
- * @version 3.1.0
+ * @version 3.1.1
  * @license Proprietary
  */
 
@@ -55,7 +53,7 @@ app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.set('trust proxy', 1);
 
 // ============================================================================
-// RATE LIMITING
+// RATE LIMITING & LOGGING
 // ============================================================================
 
 const globalLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, message: { success: false, error: 'Too many requests.', code: 'RATE_LIMIT_EXCEEDED' }, standardHeaders: true, legacyHeaders: false, skip: (req) => req.path === '/health' });
@@ -73,7 +71,7 @@ app.use((req, res, next) => { console.log(`${new Date().toISOString()} - ${req.m
 
 app.get('/health', async (req, res) => {
     const dbStatus = await testConnection();
-    res.json({ status: dbStatus ? 'ok' : 'degraded', version: '3.1.0', services: { database: dbStatus ? 'connected' : 'disconnected', email: !!process.env.SENDGRID_API_KEY, ai: !!process.env.GEMINI_API_KEY } });
+    res.json({ status: dbStatus ? 'ok' : 'degraded', version: '3.1.1', services: { database: dbStatus ? 'connected' : 'disconnected', email: !!process.env.SENDGRID_API_KEY, ai: !!process.env.GEMINI_API_KEY } });
 });
 
 // ============================================================================
@@ -89,33 +87,20 @@ const validateStart = [
     body('userData.whatsapp').optional({ checkFalsy: true }).trim().isLength({ min: 7, max: 25 }),
     body('userData.passportCountry').optional().trim().isLength({ min: 2, max: 100 }),
 ];
-
-// ===================================================================
-// INÍCIO DA CORREÇÃO 2
-// ===================================================================
 const validateVerifyCode = [
     body('action').equals('VERIFY_CODE'),
     body('sessionId').isUUID(4).withMessage('Invalid sessionId format'),
-    body('code')
-        .trim()
-        .matches(/^[0-9]{6}$/) // ✅ CORREÇÃO: Aceita apenas 6 dígitos numéricos.
-        .withMessage('Code must be a 6-digit number'),
+    body('code').trim().matches(/^[0-9]{6}$/).withMessage('Code must be a 6-digit number'),
 ];
-// ===================================================================
-// FIM DA CORREÇÃO 2
-// ===================================================================
-
 const validateResendCode = [
     body('action').equals('RESEND_CODE'),
     body('sessionId').isUUID(4).withMessage('Invalid sessionId format'),
 ];
-
 const validateResponse = [
     body('action').equals('RESPONSE'),
     body('sessionId').isUUID(4).withMessage('Invalid sessionId format'),
     body('responseData').isObject(),
 ];
-
 const validateGenerateReport = [
     body('action').equals('GENERATE_REPORT'),
     body('sessionId').isUUID(4).withMessage('Invalid sessionId format'),
@@ -126,37 +111,19 @@ const validateGenerateReport = [
 // UTILITY FUNCTIONS
 // ============================================================================
 
-// ===================================================================
-// INÍCIO DA CORREÇÃO 1
-// ===================================================================
-/**
- * Gera um código de acesso numérico de 6 dígitos.
- */
-function generateAccessCode() {
-    return Math.floor(100000 + Math.random() * 900000).toString();
-}
-// ===================================================================
-// FIM DA CORREÇÃO 1
-// ===================================================================
-
-/**
- * Gera código de acesso único (verifica no banco)
- */
+function generateAccessCode() { return Math.floor(100000 + Math.random() * 900000).toString(); }
 async function generateUniqueAccessCode() {
-    let code;
-    let attempts = 0;
-    const maxAttempts = 10;
+    let code, attempts = 0;
     do {
         code = generateAccessCode();
         const [existing] = await pool.execute('SELECT id FROM alpha_diagnoses WHERE access_code = ? LIMIT 1', [code]);
         if (existing.length === 0) break;
         attempts++;
         console.warn(`⚠️  Código ${code} já existe. Tentando novamente...`);
-    } while (attempts < maxAttempts);
-    if (attempts === maxAttempts) throw new Error('Failed to generate unique access code');
+    } while (attempts < 10);
+    if (attempts === 10) throw new Error('Failed to generate unique access code');
     return code;
 }
-
 function sanitizeUserData(userData) {
     return {
         email: userData.email.toLowerCase().trim(),
@@ -185,7 +152,33 @@ app.post('/api/diagnose', async (req, res) => {
             const accessCode = await generateUniqueAccessCode();
             console.log(`🔐 Código gerado: ${accessCode} para sessão: ${sessionId}`);
             const sanitizedData = sanitizeUserData(userData);
-            await pool.execute(`INSERT INTO alpha_diagnoses (session_id, access_code, email, first_name, last_name, whatsapp, passport_country, language, email_verified, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`, [sessionId, accessCode, sanitizedData.email, sanitizedData.firstName, sanitizedData.lastName, sanitizedData.whatsapp, sanitizedData.passportCountry, language, false]);
+            
+            // ===================================================================
+            // INÍCIO DA CORREÇÃO
+            // ===================================================================
+            await pool.execute(
+                `INSERT INTO alpha_diagnoses 
+                (session_id, access_code, email, first_name, last_name, whatsapp, 
+                 passport_country, language, current_question_index, email_verified, 
+                 created_at, updated_at) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                [
+                    sessionId,
+                    accessCode,
+                    sanitizedData.email,
+                    sanitizedData.firstName,
+                    sanitizedData.lastName,
+                    sanitizedData.whatsapp,
+                    sanitizedData.passportCountry,
+                    language,
+                    0, // current_question_index
+                    false // email_verified
+                ]
+            );
+            // ===================================================================
+            // FIM DA CORREÇÃO
+            // ===================================================================
+
             console.log('✅ Dados salvos no banco');
             try {
                 console.log('📧 Enviando email de verificação...');
@@ -199,6 +192,10 @@ app.post('/api/diagnose', async (req, res) => {
             return res.json({ success: true, sessionId: sessionId, message: 'Verification code sent to your email', question: firstQuestion, progress: { current: 0, total: 20 } });
         }
 
+        // ... O restante do código permanece o mesmo ...
+        // (Para manter a resposta concisa, omiti as seções que não foram alteradas) ...
+
+        // ACTION: VERIFY_CODE
         if (action === 'VERIFY_CODE') {
             await new Promise(resolve => verificationLimiter(req, res, resolve));
             await Promise.all(validateVerifyCode.map(v => v.run(req)));
@@ -223,6 +220,7 @@ app.post('/api/diagnose', async (req, res) => {
             return res.json({ success: true, verified: true, message: 'Email verified successfully' });
         }
 
+        // ACTION: RESEND_CODE
         if (action === 'RESEND_CODE') {
             await new Promise(resolve => resendLimiter(req, res, resolve));
             await Promise.all(validateResendCode.map(v => v.run(req)));
@@ -250,9 +248,6 @@ app.post('/api/diagnose', async (req, res) => {
             }
         }
         
-        // ... O restante do código para RESPONSE e GENERATE_REPORT permanece o mesmo ...
-        // ... (Para manter a resposta concisa, omiti as seções que não foram alteradas) ...
-
         // ACTION: RESPONSE
         if (action === 'RESPONSE') {
             await Promise.all(validateResponse.map(v => v.run(req)));
@@ -333,7 +328,7 @@ async function startServer() {
         if (!await testConnection()) throw new Error('Falha na conexão com o banco de dados');
         app.listen(PORT, () => {
             console.log('='.repeat(70));
-            console.log(`🚀 EXPANDSPAIN ALPHA™ v3.1.0 - BACKEND CORRIGIDO`);
+            console.log(`🚀 EXPANDSPAIN ALPHA™ v3.1.1 - BACKEND CORRIGIDO`);
             console.log(`   Ambiente: ${process.env.NODE_ENV || 'development'}, Porta: ${PORT}`);
             console.log('='.repeat(70));
         });

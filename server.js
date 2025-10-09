@@ -1,7 +1,7 @@
 /**
- * EXPANDSPAIN ALPHA™ - MAIN SERVER (OPTIMIZED v2.2.0 - CORS FIX)
+ * EXPANDSPAIN ALPHA™ - MAIN SERVER (OPTIMIZED v2.3.0 - WHATSAPP FIX)
  * Backend principal com segurança, rate limiting e validações
- * FIX: Configuração de CORS robusta para permitir múltiplas origens e subdomínios.
+ * FIX: Validação do WhatsApp tornada flexível e opcional para melhorar a experiência do usuário.
  */
 
 require('dotenv').config();
@@ -27,11 +27,6 @@ const PORT = process.env.PORT || 3000;
 
 // Helmet - Security headers
 app.use(helmet());
-
-
-// ===================================================================
-// INÍCIO DA CORREÇÃO DE CORS
-// ===================================================================
 
 // Lista de domínios permitidos. Adicione aqui futuros domínios (ex: staging, outros TLDs).
 const allowedOrigins = [
@@ -60,11 +55,6 @@ const corsOptions = {
 
 // CORS configurado com as opções robustas
 app.use(cors(corsOptions));
-
-// ===================================================================
-// FIM DA CORREÇÃO DE CORS
-// ===================================================================
-
 
 // Body parser com limite de tamanho
 app.use(express.json({ limit: '1mb' }));
@@ -122,7 +112,7 @@ app.get('/health', (req, res) => {
         status: 'ok',
         timestamp: new Date().toISOString(),
         environment: process.env.NODE_ENV || 'development',
-        version: '2.2.0' // Versão atualizada
+        version: '2.3.0' // Versão atualizada
     });
 });
 
@@ -137,7 +127,17 @@ const validateStart = [
     body('userData.email').isEmail().normalizeEmail(),
     body('userData.firstName').optional().trim().isLength({ min: 1, max: 100 }),
     body('userData.lastName').optional().trim().isLength({ min: 1, max: 100 }),
-    body('userData.whatsapp').optional().matches(/^\+\d{10,15}$/),
+    // ===================================================================
+    // INÍCIO DA CORREÇÃO DO WHATSAPP
+    // ===================================================================
+    body('userData.whatsapp')
+        .optional({ checkFalsy: true }) // Permite que o campo seja enviado vazio ou nulo
+        .trim()
+        .isLength({ min: 7, max: 25 })  // Se for preenchido, verifica um tamanho razoável
+        .withMessage('WhatsApp number seems to be invalid.'),
+    // ===================================================================
+    // FIM DA CORREÇÃO DO WHATSAPP
+    // ===================================================================
     body('userData.passportCountry').optional().trim().isLength({ min: 2, max: 100 }),
 ];
 
@@ -192,14 +192,20 @@ app.post('/api/diagnose', async (req, res) => {
             const newSessionId = uuidv4();
             const accessCode = await generateUniqueAccessCode();
 
-            // Sanitizar dados do usuário
+            // ===================================================================
+            // INÍCIO DA SANITIZAÇÃO CORRIGIDA
+            // ===================================================================
             const sanitizedUserData = {
                 email: userData.email.toLowerCase().trim(),
                 firstName: userData.firstName?.trim().substring(0, 100) || null,
                 lastName: userData.lastName?.trim().substring(0, 100) || null,
-                whatsapp: userData.whatsapp?.trim() || null,
+                // Garante que o whatsapp seja salvo como null se vazio, ou faz trim se preenchido.
+                whatsapp: userData.whatsapp?.trim() ? userData.whatsapp.trim().substring(0, 25) : null,
                 passportCountry: userData.passportCountry?.trim().substring(0, 100) || null,
             };
+            // ===================================================================
+            // FIM DA SANITIZAÇÃO CORRIGIDA
+            // ===================================================================
 
             // Salvar no banco de dados
             await pool.execute(
@@ -648,7 +654,7 @@ async function startServer() {
         app.listen(PORT, () => {
             console.log('');
             console.log('='.repeat(60));
-            console.log('🚀 EXPANDSPAIN ALPHA™ v2.2.0 - BACKEND OTIMIZADO');
+            console.log('🚀 EXPANDSPAIN ALPHA™ v2.3.0 - BACKEND OTIMIZADO');
             console.log('='.repeat(60));
             console.log(`   Ambiente: ${process.env.NODE_ENV || 'development'}`);
             console.log(`   Porta: ${PORT}`);

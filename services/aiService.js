@@ -1,11 +1,19 @@
 /**
- * EXPANDSPAIN ALPHA™ - AI SERVICE (v2.4 - Attempting Gemini 2.5 Pro)
+ * EXPANDSPAIN ALPHA™ - AI SERVICE (v3.0 FINAL)
  * Integração com Google Gemini API
- * - Alterado para usar o modelo 'gemini-2.5-pro' conforme solicitado.
- * - Mantidos os fixes de safety settings e otimizações de prompt/cache.
+ * - CORRIGIDO: Importação e uso correto das constantes de segurança.
+ * - CORRIGIDO: Validação de resposta da IA para evitar crashes.
+ * - MANTIDO: Modelo 'gemini-2.5-pro' conforme solicitado.
+ * - MANTIDO: Otimizações de prompt e cache.
  */
 
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+// ===================================================================
+// INÍCIO DA CORREÇÃO 1: IMPORTAÇÃO COMPLETA
+// ===================================================================
+const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/generative-ai');
+// ===================================================================
+// FIM DA CORREÇÃO 1
+// ===================================================================
 
 // Inicializar Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -129,7 +137,7 @@ async function generateAIAnalysis(scoreData, answers, language = 'pt') {
                      scoreData.score < 90 ? 'confident and professional' :
                      'validating and precise';
 
-        // PROMPT OTIMIZADO - ~2000 tokens (vs 5000 anterior)
+        // PROMPT OTIMIZADO
         const prompt = `You are Alpha AI, strategic visa consultant for ExpandSpain.
 
 CANDIDATE DATA:
@@ -193,10 +201,10 @@ ABSOLUTE RULES:
 Generate the analysis now following ALL rules above.`;
 
         // ===================================================================
-        // INÍCIO DA ALTERAÇÃO SOLICITADA
+        // INÍCIO DA CORREÇÃO 2: USO CORRETO DAS CONSTANTES DE SEGURANÇA
         // ===================================================================
         const model = genAI.getGenerativeModel({ 
-            model: 'gemini-2.5-pro', // ✅ ALTERADO: Conforme sua instrução.
+            model: 'gemini-2.5-pro',
             generationConfig: {
                 temperature: 0.7,
                 topK: 40,
@@ -204,25 +212,44 @@ Generate the analysis now following ALL rules above.`;
                 maxOutputTokens: 1024,
             },
             safetySettings: [
-                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+                {
+                    category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+                    threshold: HarmBlockThreshold.BLOCK_NONE,
+                },
+                {
+                    category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                    threshold: HarmBlockThreshold.BLOCK_NONE,
+                },
+                {
+                    category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                    threshold: HarmBlockThreshold.BLOCK_NONE,
+                },
+                {
+                    category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                    threshold: HarmBlockThreshold.BLOCK_NONE,
+                },
             ],
         });
         // ===================================================================
-        // FIM DA ALTERAÇÃO SOLICITADA
+        // FIM DA CORREÇÃO 2
         // ===================================================================
 
         // Gerar análise
         const result = await model.generateContent(prompt);
         const response = await result.response;
         
-        if (!response || !response.text) {
-            throw new Error('AI response or its text property is undefined/null.');
+        // ===================================================================
+        // INÍCIO DA CORREÇÃO 3: VERIFICAÇÃO DE RESPOSTA VÁLIDA
+        // ===================================================================
+        if (!response || typeof response.text !== 'function') {
+            console.error('❌ Resposta da IA é inválida ou não contém a função text().', response);
+            throw new Error('AI response is invalid or does not contain a text function.');
         }
 
         const analysis = response.text();
+        // ===================================================================
+        // FIM DA CORREGEÇÃO 3
+        // ===================================================================
 
         console.log('✅ Análise gerada com sucesso');
         console.log(`   Tamanho: ${analysis.length} caracteres`);
@@ -234,8 +261,8 @@ Generate the analysis now following ALL rules above.`;
             console.warn('⚠️  Análise com problemas de validação:', validationIssues);
             
             // Se problemas críticos, usar fallback
-            if (validationIssues.some(i => i.includes('Missing Power Oracle'))) {
-                console.error('❌ Análise NÃO menciona Power Oracle™. Usando fallback.');
+            if (validationIssues.some(i => i.includes('Missing Power Oracle') || i.includes('Too short'))) {
+                console.error('❌ Análise inválida (curta ou sem menção ao Oracle). Usando fallback.');
                 return generateFallbackAnalysis(scoreData, language);
             }
         }
@@ -265,7 +292,6 @@ Generate the analysis now following ALL rules above.`;
 
 /**
  * Gera análise fallback se IA falhar
- * VERSÃO MELHORADA - Fallbacks por faixa de score
  */
 function generateFallbackAnalysis(scoreData, language) {
     const score = scoreData.score;
@@ -273,13 +299,11 @@ function generateFallbackAnalysis(scoreData, language) {
     const gapCount = scoreData.gaps?.length || 0;
     const gapsList = scoreData.gaps?.slice(0, 3).join(', ') || 'none';
     
-    // Determinar faixa de score
     const scoreRange = score < 40 ? '0-39' :
                        score < 60 ? '40-59' :
                        score < 75 ? '60-74' :
                        score < 90 ? '75-89' : '90-100';
     
-    // Taxa de rejeição por faixa
     const rejectionRates = {
         '0-39': 94,
         '40-59': 68,
@@ -290,7 +314,6 @@ function generateFallbackAnalysis(scoreData, language) {
     
     const rejectionRate = rejectionRates[scoreRange];
     
-    // Fallbacks por idioma e faixa de score
     const fallbacks = {
         pt: {
             '0-39': `Seu perfil de ${profile} com score de ${score}/100 indica necessidade de preparação crítica antes da aplicação. ${gapCount > 0 ? `Os principais gaps identificados são: ${gapsList}.` : 'Seu perfil precisa fortalecimento estratégico.'} Com esses gaps não resolvidos, a taxa de rejeição histórica é de ${rejectionRate}%.

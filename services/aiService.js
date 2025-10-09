@@ -190,7 +190,7 @@ Generate the analysis now following ALL rules above.`;
 
         // Configurar modelo
         const model = genAI.getGenerativeModel({ 
-            model: 'gemini-pro',
+            model: 'gemini-2.5-pro',
             generationConfig: {
                 temperature: 0.7,
                 topK: 40,

@@ -1,12 +1,12 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * EXPANDSPAIN ALPHA™ - SCORING SYSTEM v2.2.0
+ * EXPANDSPAIN ALPHA™ - SCORING SYSTEM v2.2.1
  * ═══════════════════════════════════════════════════════════════════════════
  * 
  * Sistema de pontuação e análise de gaps
- * FIX: Normalização de estrutura de dados (bug 100/100)
+ * FIX CRÍTICO: Detecta formato { "0": { "V1": 0 } }
  * 
- * @version 2.2.0
+ * @version 2.2.1
  * @date 2025-10-10
  * @author ExpandSpain Team
  * @license Proprietary
@@ -243,8 +243,9 @@ const PENALTY_RULES = {
  * 
  * Entrada aceita:
  * 1. { "q_V1": 0, "q_V2": 1 } (direto)
- * 2. { "0": { questionId: "q_V1", optionIndex: 0 } } (com objeto)
- * 3. { "0": { questionId: "q_V1", responseData: { optionIndex: 0 } } } (aninhado)
+ * 2. { "0": { "V1": 0 }, "1": { "V2": 1 } } (formato real do sistema)
+ * 3. { "0": { questionId: "q_V1", optionIndex: 0 } } (com objeto)
+ * 4. { "0": { questionId: "q_V1", responseData: { optionIndex: 0 } } } (aninhado)
  * 
  * Saída padronizada:
  * { "q_V1": 0, "q_V2": 1 }
@@ -266,39 +267,58 @@ function normalizeAnswers(rawAnswers) {
         
         // Caso 1: Valor já é número direto (formato esperado)
         // { "q_V1": 0 }
-        if (typeof value === 'number') {
+        if (typeof value === 'number' && key.startsWith('q_')) {
             normalized[key] = value;
             continue;
         }
         
-        // Caso 2: Valor é objeto com questionId e optionIndex
-        // { "0": { questionId: "q_V1", optionIndex: 0 } }
+        // Caso 2: Valor é objeto com propriedades tipo V1, V2, V3...
+        // { "0": { "V1": 0 }, "1": { "V2": 1 } } ← FORMATO REAL DO SISTEMA
         if (value && typeof value === 'object') {
+            // Procurar por propriedades que começam com V
+            for (const prop in value) {
+                if (prop.match(/^V\d+/) || prop.match(/^V\d+[A-Z_]*$/)) {
+                    const questionId = `q_${prop}`;
+                    const optionValue = value[prop];
+                    
+                    if (typeof optionValue === 'number') {
+                        normalized[questionId] = optionValue;
+                        console.log(`   ✅ Convertido: "${key}" → "${questionId}" = ${optionValue}`);
+                        continue;
+                    }
+                }
+            }
+            
+            // Caso 3: Valor é objeto com questionId e optionIndex
+            // { "0": { questionId: "q_V1", optionIndex: 0 } }
             if (value.questionId && value.optionIndex !== undefined) {
                 normalized[value.questionId] = value.optionIndex;
+                console.log(`   ✅ Formato questionId/optionIndex: ${value.questionId} = ${value.optionIndex}`);
                 continue;
             }
             
-            // Caso 3: Valor aninhado com responseData
+            // Caso 4: Valor aninhado com responseData
             // { "0": { questionId: "q_V1", responseData: { optionIndex: 0 } } }
             if (value.questionId && value.responseData && value.responseData.optionIndex !== undefined) {
                 normalized[value.questionId] = value.responseData.optionIndex;
+                console.log(`   ✅ Formato aninhado: ${value.questionId} = ${value.responseData.optionIndex}`);
                 continue;
             }
             
-            // Caso 4: Objeto com optionIndex direto mas sem questionId
+            // Caso 5: Objeto com optionIndex direto mas sem questionId
             // { "q_V1": { optionIndex: 0 } }
-            if (value.optionIndex !== undefined) {
+            if (value.optionIndex !== undefined && key.startsWith('q_')) {
                 normalized[key] = value.optionIndex;
+                console.log(`   ✅ Formato optionIndex direto: ${key} = ${value.optionIndex}`);
                 continue;
             }
         }
-        
-        console.warn(`⚠️  [Scoring] Formato desconhecido para key "${key}":`, value);
     }
     
     console.log(`✅ [Scoring] Normalizado: ${Object.keys(normalized).length} respostas`);
-    console.log('   Sample:', JSON.stringify(Object.entries(normalized).slice(0, 3)));
+    if (Object.keys(normalized).length > 0) {
+        console.log('   Sample:', JSON.stringify(Object.entries(normalized).slice(0, 3)));
+    }
     
     return normalized;
 }
@@ -315,7 +335,7 @@ function normalizeAnswers(rawAnswers) {
  */
 function calculateScore(rawAnswers, language = 'pt') {
     console.log('═'.repeat(70));
-    console.log('🎯 [Scoring v2.2.0] calculateScore() INICIADO');
+    console.log('🎯 [Scoring v2.2.1] calculateScore() INICIADO');
     console.log(`   Language: ${language}`);
     console.log('═'.repeat(70));
     

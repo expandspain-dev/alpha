@@ -1,17 +1,22 @@
 /**
  * EXPANDSPAIN ALPHA™ – AISERVICE
- * v5.1 – Gemini 2.5 | Prompts 100% integrais (pt/en/es) | Vende apenas Power Oracle™
+ * v5.3 – Gemini 2.5 | Prompts integrais (pt/en/es) | Foco exclusivo em Power Oracle™
  *
  * Setup:
  *   npm i @google/generative-ai
- *   Env:
- *     GEMINI_API_KEY=AIzaSyDZmpnu6RHTVaNTvY7QdPWCDTm1Wlwsqk4
- *     GEMINI_MODEL=models/gemini-2.5-flash   // opcional; default prioriza 2.5
+ *
+ * Env (obrigatório):
+ *   GEMINI_API_KEY=AIzaSyDZmpnu6RHTVaNTvY7QdPWCDTm1Wlwsqk4
+ *   GEMINI_MODEL=models/gemini-2.5-flash   // opcional; default prioriza 2.5
  */
 
-const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/generative-ai');
+'use strict';
 
-// ======= Modelo (prioriza 2.5) =======
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+/* ===========================
+ *  MODELOS (prioriza 2.5)
+ * =========================== */
 const MODEL_CANDIDATES = [
   'models/gemini-2.5-flash',
   'models/gemini-2.5-pro',
@@ -20,12 +25,16 @@ const MODEL_CANDIDATES = [
 ];
 const MODEL_ID = process.env.GEMINI_MODEL || MODEL_CANDIDATES[0];
 
-// ======= API =======
+/* ===========================
+ *  CLIENTE GEMINI
+ * =========================== */
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// ======= Util =======
+/* ===========================
+ *  CACHE EM MEMÓRIA (7 dias)
+ * =========================== */
 const analysisCache = new Map();
-const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 dias
 
 setInterval(() => {
   const now = Date.now();
@@ -34,10 +43,15 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000);
 
+/* ===========================
+ *  UTILS
+ * =========================== */
 function generateCacheKey(scoreData, language) {
   const scoreRange = Math.floor((scoreData?.score || 0) / 10) * 10;
   const gapsKey = (scoreData?.gaps || []).map(String).sort().join('|');
-  return `${language}:${scoreRange}:${gapsKey}`;
+  const statusKey = String(scoreData?.status || '').toLowerCase();
+  const profileKey = String(scoreData?.profile || '').toLowerCase();
+  return `${language}:${scoreRange}:${statusKey}:${profileKey}:${gapsKey}`;
 }
 
 function sanitizeForPrompt(text) {
@@ -49,7 +63,9 @@ function sanitizeForPrompt(text) {
     .trim();
 }
 
-// ======= PROMPTS INTEGRAIS (sem Code +34) =======
+/* ================================================================
+ *  PROMPTS (sem qualquer menção a Code +34™ | foco Power Oracle™)
+ * ================================================================ */
 const PROMPT_TEMPLATES = {
   pt: ({ profile, score, status, gaps, strengths }) => `
 Você é a Alpha AI, consultora estratégica de vistos da ExpandSpain. Escreva em Português do Brasil.
@@ -69,7 +85,6 @@ REGRAS ABSOLUTAS DE COPY:
 - Falar diretamente com “você” (não use “o candidato”).
 - Usar exatamente os nomes dos gaps fornecidos (não inventar novos).
 - Mencionar “Power Oracle™” somente no 3º parágrafo (solução).
-- PROIBIDO citar Code +34 ou ofertas de serviço completo.
 
 ESTRUTURA OBRIGATÓRIA:
 
@@ -122,7 +137,6 @@ NON-NEGOTIABLE COPY RULES:
 - Address the reader as “you” (never “the candidate”).
 - Use the exact gap names provided; do not invent gaps.
 - Mention “Power Oracle™” only in paragraph 3.
-- DO NOT mention Code +34 or full-service offers.
 
 MANDATORY STRUCTURE:
 
@@ -175,7 +189,6 @@ REGLAS DE COPY INNEGOCIABLES:
 - Dirígete como “tú” (no “el candidato”).
 - Usa los nombres exactos de los gaps provistos; no inventes gaps.
 - Menciona “Power Oracle™” solo en el 3º párrafo.
-- PROHIBIDO mencionar Code +34 o servicios full-service.
 
 ESTRUCTURA OBLIGATORIA:
 
@@ -208,10 +221,13 @@ PÁRRAFO 3 (5–6 líneas) — Solución: Power Oracle™:
 - Ajusta el valor a la banda de puntuación (hoja de ruta, corrección de gaps, optimización técnica, precisión quirúrgica).
 - CTA OBLIGATORIA (última línea):
   "Accede al Power Oracle™ ahora y recibe tu hoja de ruta personalizada en minutos."
-`.trim(),
+`.trim()
 };
 
-// ======= Validação =======
+/* ===========================
+ *  VALIDAÇÃO (forma/estrutura)
+ *  — sem “censura” de termos —
+ * =========================== */
 function validateAIOutput(analysis) {
   const issues = [];
   if (!analysis || typeof analysis !== 'string') {
@@ -222,39 +238,39 @@ function validateAIOutput(analysis) {
   if (words < 90) issues.push(`Muito curto (${words} palavras)`);
   if (words > 320) issues.push(`Muito longo (${words} palavras)`);
   if (!/Power Oracle™/i.test(analysis)) issues.push('Faltou mencionar Power Oracle™ no 3º parágrafo.');
-  if (/Code\s*\+34™/i.test(analysis)) issues.push('Mencionou Code +34™ (proibido).');
-
   const paras = analysis.split(/\n\s*\n/).filter(p => p.trim().length > 30);
   if (paras.length < 3) issues.push('Menos de 3 parágrafos úteis.');
   return issues;
 }
 
-// ======= Fallback offline =======
+/* ===========================
+ *  FALLBACKS OFFLINE
+ * =========================== */
 const FALLBACKS = {
-  pt: (score, profile, gaps=[]) => {
-    const band = score<40?'0-39':score<60?'40-59':score<75?'60-74':score<90?'75-89':'90-100';
-    const rate = { '0-39':93,'40-59':68,'60-74':48,'75-89':28,'90-100':9 }[band];
-    const gapsTxt = gaps.length ? gaps.slice(0,3).join(', ') : 'sem gaps críticos explicitados';
+  pt: (score, profile, gaps = []) => {
+    const band = score < 40 ? '0-39' : score < 60 ? '40-59' : score < 75 ? '60-74' : score < 90 ? '75-89' : '90-100';
+    const rate = { '0-39': 93, '40-59': 68, '60-74': 48, '75-89': 28, '90-100': 9 }[band];
+    const gapsTxt = gaps.length ? gaps.slice(0, 3).join(', ') : 'sem gaps críticos explicitados';
     return [
       `Seu perfil de ${profile} com pontuação ${score}/100 indica ${band}. Gaps prioritários: ${gapsTxt}. Com esses pontos sem correção, a taxa histórica de rejeição gira em torno de ${rate}%.`,
       `Informação ≠ estratégia. Muitos perfis nesta faixa falham por sequência errada, documentação incompleta e prazos mal geridos — detalhes “cirúrgicos” que não aparecem em checklists genéricos.`,
       `A solução prática é o Power Oracle™: um roadmap acionável que liga diagnóstico à execução. Você recebe: (1) Alpha Mindset, (2) Legal Anatomy adaptado ao seu perfil, (3) War Room Docs com modelos prontos, (4) Integrated Family. Acesse o Power Oracle™ agora e receba seu roadmap personalizado em minutos.`
     ].join('\n\n');
   },
-  en: (score, profile, gaps=[]) => {
-    const band = score<40?'0-39':score<60?'40-59':score<75?'60-74':score<90?'75-89':'90-100';
-    const rate = { '0-39':93,'40-59':68,'60-74':48,'75-89':28,'90-100':9 }[band];
-    const gapsTxt = gaps.length ? gaps.slice(0,3).join(', ') : 'no explicit critical gaps';
+  en: (score, profile, gaps = []) => {
+    const band = score < 40 ? '0-39' : score < 60 ? '40-59' : score < 75 ? '60-74' : score < 90 ? '75-89' : '90-100';
+    const rate = { '0-39': 93, '40-59': 68, '60-74': 48, '75-89': 28, '90-100': 9 }[band];
+    const gapsTxt = gaps.length ? gaps.slice(0, 3).join(', ') : 'no explicit critical gaps';
     return [
       `Your ${profile} profile with a ${score}/100 score indicates ${band}. Priority gaps: ${gapsTxt}. With these unresolved, historical rejection is ~${rate}%.`,
       `Information ≠ strategy. Many profiles fail due to wrong sequencing, incomplete documentation, and timing — “surgical” details no generic checklist captures.`,
       `The practical solution is Power Oracle™: an actionable roadmap from diagnosis to execution — (1) Alpha Mindset, (2) Legal Anatomy, (3) War Room Docs, (4) Integrated Family. Access the Power Oracle™ now and get your personalized roadmap in minutes.`
     ].join('\n\n');
   },
-  es: (score, profile, gaps=[]) => {
-    const band = score<40?'0-39':score<60?'40-59':score<75?'60-74':score<90?'75-89':'90-100';
-    const rate = { '0-39':93,'40-59':68,'60-74':48,'75-89':28,'90-100':9 }[band];
-    const gapsTxt = gaps.length ? gaps.slice(0,3).join(', ') : 'sin gaps críticos explícitos';
+  es: (score, profile, gaps = []) => {
+    const band = score < 40 ? '0-39' : score < 60 ? '40-59' : score < 75 ? '60-74' : score < 90 ? '75-89' : '90-100';
+    const rate = { '0-39': 93, '40-59': 68, '60-74': 48, '75-89': 28, '90-100': 9 }[band];
+    const gapsTxt = gaps.length ? gaps.slice(0, 3).join(', ') : 'sin gaps críticos explícitos';
     return [
       `Tu perfil de ${profile} con ${score}/100 indica ${band}. Gaps prioritarios: ${gapsTxt}. Con ellos sin corregir, el rechazo histórico ronda el ${rate}%.`,
       `Información ≠ estrategia. Muchos fallan por secuencia incorrecta, documentación incompleta y tiempos — detalles “quirúrgicos” que no aparecen en checklists genéricos.`,
@@ -263,23 +279,28 @@ const FALLBACKS = {
   }
 };
 
-// ======= Geração =======
+/* ===========================
+ *  GERAÇÃO DE ANÁLISE (IA)
+ * =========================== */
 async function generateAIAnalysis(scoreData, answers, language = 'pt') {
-  const lang = ['pt','en','es'].includes(language) ? language : 'pt';
+  const lang = ['pt', 'en', 'es'].includes(language) ? language : 'pt';
 
   try {
+    // Cache
     const cacheKey = generateCacheKey(scoreData, lang);
     const cached = analysisCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
       return cached.analysis;
     }
 
-    const safeProfile = sanitizeForPrompt(scoreData?.profile || 'Candidato');
-    const safeGaps = (scoreData?.gaps || []).map(sanitizeForPrompt).join(', ');
+    // Sanitização
+    const safeProfile   = sanitizeForPrompt(scoreData?.profile || 'Candidato');
+    const safeGaps      = (scoreData?.gaps || []).map(sanitizeForPrompt).join(', ');
     const safeStrengths = (scoreData?.strengths || []).map(sanitizeForPrompt).join(', ');
-    const score = Number(scoreData?.score || 0);
-    const status = sanitizeForPrompt(scoreData?.status || 'Em avaliação');
+    const score         = Number(scoreData?.score || 0);
+    const status        = sanitizeForPrompt(scoreData?.status || 'Em avaliação');
 
+    // Prompt localizado
     const prompt = PROMPT_TEMPLATES[lang]({
       profile: safeProfile,
       score,
@@ -288,53 +309,63 @@ async function generateAIAnalysis(scoreData, answers, language = 'pt') {
       strengths: safeStrengths
     });
 
-    // Modelo principal e fallback
+    // Chamada ao modelo principal com fallback de modelo (sem safetySettings adicionais)
     let result;
     try {
       const model = genAI.getGenerativeModel({
         model: MODEL_ID,
-        safetySettings: [
-          { category: HarmCategory.HARM_CATEGORY_HARASSMENT,        threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,       threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        ],
         generationConfig: {
-          temperature: 0.7, topK: 40, topP: 0.95, maxOutputTokens: 1024
+          temperature: 0.7,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 1024
         }
       });
       result = await model.generateContent(prompt);
     } catch (e) {
       const fallbackId = MODEL_CANDIDATES.find(m => m !== MODEL_ID);
       if (!fallbackId) throw e;
-      const fallbackModel = genAI.getGenerativeModel({ model: fallbackId });
+      const fallbackModel = genAI.getGenerativeModel({
+        model: fallbackId,
+        generationConfig: {
+          temperature: 0.7,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 1024
+        }
+      });
       result = await fallbackModel.generateContent(prompt);
     }
 
+    // Extração do texto
     const response = await result.response;
     const analysis =
       (typeof response.text === 'function' ? response.text() : null) ||
       response?.candidates?.[0]?.content?.parts?.map(p => p.text).join('\n') ||
       '';
 
-    if (!analysis || analysis.trim() === '') throw new Error('Resposta vazia da IA.');
+    if (!analysis || analysis.trim() === '') {
+      throw new Error('Resposta vazia da IA.');
+    }
 
-    // Validação
+    // Validação de forma/estrutura (sem bloquear termos)
     const issues = validateAIOutput(analysis);
     if (issues.length) {
-      const critical = issues.some(i => /Power Oracle™|Code \+34™|vazia/.test(i));
+      // Se faltou o essencial, cai para fallback localizado
+      const critical = issues.some(i => /Power Oracle™|vazia/i.test(i));
       if (critical) {
         const fb = FALLBACKS[lang](score, safeProfile, scoreData?.gaps || []);
         analysisCache.set(cacheKey, { analysis: fb, timestamp: Date.now() });
         return fb;
       }
+      // Se não for crítico, seguimos com o texto da IA (aceitando pequenas variações)
     }
 
     analysisCache.set(cacheKey, { analysis, timestamp: Date.now() });
     return analysis;
 
   } catch (err) {
-    const langFb = ['pt','en','es'].includes(language) ? language : 'pt';
+    const langFb = ['pt', 'en', 'es'].includes(language) ? language : 'pt';
     const score = Number(scoreData?.score || 0);
     const fb = FALLBACKS[langFb](score, sanitizeForPrompt(scoreData?.profile || 'Candidato'), scoreData?.gaps || []);
     return fb;

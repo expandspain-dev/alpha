@@ -1,334 +1,344 @@
 /**
- * EXPANDSPAIN ALPHA™ - AI SERVICE (v4.2 - FINAL DOSSIER IMPLEMENTATION)
- * Integração com Google Gemini API
- * - CORRIGIDO: Nome do modelo atualizado para o formato da API v1 estável ('models/gemini-1.5-pro').
- * - CORRIGIDO: Importação e uso correto das constantes de segurança.
- * - CORRIGIDO: Método de leitura da resposta para compatibilidade com SDKs recentes.
- * - MANTIDO: Otimizações de prompt, cache e validação.
+ * EXPANDSPAIN ALPHA™ – AISERVICE
+ * v5.1 – Gemini 2.5 | Prompts 100% integrais (pt/en/es) | Vende apenas Power Oracle™
+ *
+ * Setup:
+ *   npm i @google/generative-ai
+ *   Env:
+ *     GEMINI_API_KEY=AIzaSyDZmpnu6RHTVaNTvY7QdPWCDTm1Wlwsqk4
+ *     GEMINI_MODEL=models/gemini-2.5-flash   // opcional; default prioriza 2.5
  */
 
 const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/generative-ai');
 
-// Inicializar Gemini
+// ======= Modelo (prioriza 2.5) =======
+const MODEL_CANDIDATES = [
+  'models/gemini-2.5-flash',
+  'models/gemini-2.5-pro',
+  'models/gemini-1.5-pro',
+  'models/gemini-1.5-flash'
+];
+const MODEL_ID = process.env.GEMINI_MODEL || MODEL_CANDIDATES[0];
+
+// ======= API =======
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Mapa de idiomas
-const langMap = {
-    pt: 'Português do Brasil',
-    en: 'English',
-    es: 'Español'
-};
-
-// Cache de análises (em memória)
+// ======= Util =======
 const analysisCache = new Map();
-const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 dias
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
-/**
- * Limpa cache expirado periodicamente
- */
 setInterval(() => {
-    const now = Date.now();
-    for (const [key, value] of analysisCache.entries()) {
-        if (now - value.timestamp > CACHE_TTL) {
-            analysisCache.delete(key);
-        }
-    }
+  const now = Date.now();
+  for (const [k, v] of analysisCache.entries()) {
+    if (now - v.timestamp > CACHE_TTL) analysisCache.delete(k);
+  }
 }, 60 * 60 * 1000);
 
-/**
- * Gera chave de cache única baseada em características do candidato
- */
 function generateCacheKey(scoreData, language) {
-    const scoreRange = Math.floor(scoreData.score / 10) * 10;
-    const gapsKey = (scoreData.gaps || []).sort().join('|');
-    return `${scoreRange}-${gapsKey}-${language}`;
+  const scoreRange = Math.floor((scoreData?.score || 0) / 10) * 10;
+  const gapsKey = (scoreData?.gaps || []).map(String).sort().join('|');
+  return `${language}:${scoreRange}:${gapsKey}`;
 }
 
-/**
- * Sanitiza texto para prevenir prompt injection
- */
 function sanitizeForPrompt(text) {
-    if (!text) return 'Not specified';
-    return String(text)
-        .replace(/[^\w\s\-\/,.()]/gi, '')
-        .substring(0, 200)
-        .trim();
+  if (!text) return 'Not specified';
+  return String(text)
+    .replace(/[^\w\s\-\/,.()€:+]/gi, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .substring(0, 600)
+    .trim();
 }
 
-/**
- * Valida output da IA
- */
-function validateAIOutput(analysis, scoreData) {
-    const issues = [];
-    
-    if (!analysis || typeof analysis !== 'string') {
-        issues.push('Analysis is null or not a string');
-        return issues;
-    }
+// ======= PROMPTS INTEGRAIS (sem Code +34) =======
+const PROMPT_TEMPLATES = {
+  pt: ({ profile, score, status, gaps, strengths }) => `
+Você é a Alpha AI, consultora estratégica de vistos da ExpandSpain. Escreva em Português do Brasil.
 
-    if (!analysis.includes('Power Oracle') && !analysis.includes('Oracle™')) {
-        issues.push('Missing Power Oracle™ mention');
-    }
-    
-    if (scoreData.score < 75 && analysis.includes('Code +34')) {
-        issues.push('Incorrectly mentions Code +34™');
-    }
-    
-    const wordCount = analysis.split(/\s+/).length;
-    if (wordCount < 80) {
-        issues.push(`Too short (${wordCount} words)`);
-    }
-    if (wordCount > 400) {
-        issues.push(`Too long (${wordCount} words)`);
-    }
-    
-    const paragraphs = analysis.split('\n\n').filter(p => p.trim().length > 50);
-    if (paragraphs.length < 3) {
-        issues.push(`Insufficient structure (${paragraphs.length} paragraphs)`);
-    }
-    
-    return issues;
-}
+DADOS DO CANDIDATO:
+- Perfil: ${profile}
+- Pontuação: ${score}/100
+- Status: ${status}
+- Gaps críticos: ${gaps || 'Nenhum identificado'}
+- Forças: ${strengths || 'Nenhuma listada'}
 
-/**
- * Gera análise com IA que vende Power Oracle™
- */
-async function generateAIAnalysis(scoreData, answers, language = 'pt') {
-    try {
-        console.log('🤖 Gerando análise com IA Gemini (API v1 Stable)...');
-        console.log(`   Score: ${scoreData.score}/100`);
-        console.log(`   Status: ${scoreData.status}`);
-        console.log(`   Idioma: ${language}`);
+OBJETIVO: Gerar uma análise de 3 parágrafos que VENDA o Power Oracle™ (€97). Não mencionar qualquer outro produto.
 
-        const cacheKey = generateCacheKey(scoreData, language);
-        if (analysisCache.has(cacheKey)) {
-            const cached = analysisCache.get(cacheKey);
-            if (Date.now() - cached.timestamp < CACHE_TTL) {
-                console.log('✅ Usando análise em cache (economizando API call)');
-                return cached.analysis;
-            } else {
-                analysisCache.delete(cacheKey);
-            }
-        }
+REGRAS ABSOLUTAS DE COPY:
+- Máximo: 280 palavras. ZERO emojis.
+- Tom: claro, estratégico, persuasivo, sem prometer “aprovação garantida”.
+- Falar diretamente com “você” (não use “o candidato”).
+- Usar exatamente os nomes dos gaps fornecidos (não inventar novos).
+- Mencionar “Power Oracle™” somente no 3º parágrafo (solução).
+- PROIBIDO citar Code +34 ou ofertas de serviço completo.
 
-        const safeProfile = sanitizeForPrompt(scoreData.profile);
-        const safeGaps = (scoreData.gaps || []).map(sanitizeForPrompt).join(', ');
-        const safeStrengths = (scoreData.strengths || []).map(sanitizeForPrompt).join(', ');
+ESTRUTURA OBRIGATÓRIA:
 
-        const tone = scoreData.score < 40 ? 'urgent and preventive' :
-                     scoreData.score < 60 ? 'direct and data-driven' :
-                     scoreData.score < 75 ? 'motivational and strategic' :
-                     scoreData.score < 90 ? 'confident and professional' :
-                     'validating and precise';
+PARÁGRAFO 1 (3–4 linhas) — Diagnóstico Técnico Honesto:
+- Iniciar com a frase EXATA:
+  "Seu perfil de [Perfil] com pontuação [X]/100 indica [Status]."
+- Em seguida, listar 2–3 gaps mais críticos pelo nome.
+- Indicar taxa de rejeição histórica coerente com a faixa:
+  • 0–39: 90–95%
+  • 40–59: 60–75%
+  • 60–74: 40–55%
+  • 75–89: 20–35%
+  • 90–100: 5–15%
 
-        const prompt = `You are Alpha AI, strategic visa consultant for ExpandSpain.
+PARÁGRAFO 2 (3–4 linhas) — O Problema que Ninguém Conta:
+- Explicar por que informação ≠ estratégia, variando a mensagem por faixa:
+  • 0–39: “99% aplicam antes de estarem prontos e desperdiçam €2.000+.”
+  • 40–59: “87% com esses gaps são rejeitados mesmo ‘sabendo’ os requisitos.”
+  • 60–74: “O ‘quase certo’ cai por detalhes técnicos invisíveis em checklists.”
+  • 75–89: “Perfis fortes perdem por falhas documentais ‘cirúrgicas’.”
+  • 90–100: “Mesmo excelentes falham por estrutura documental deficiente.”
+
+PARÁGRAFO 3 (5–6 linhas) — Solução: Power Oracle™:
+- Apresentar o Power Oracle™ como método prático para sair do diagnóstico e ir para a execução.
+- Descrever objetivamente os 4 módulos:
+  • Alpha Mindset — use o visto como base de expansão europeia
+  • Legal Anatomy — checklist completo adaptado ao seu perfil
+  • War Room Docs — modelos prontos que evitam erros críticos
+  • Integrated Family — planejamento para cônjuge/filhos/pais (se aplicável)
+- Adaptar a proposta à faixa de score (roteiro de preparação, correção de gaps, otimização técnica, precisão cirúrgica).
+- CTA OBRIGATÓRIO (última linha, exatamente esta promessa de entrega):
+  "Acesse o Power Oracle™ agora e receba seu roadmap personalizado em minutos."
+`.trim(),
+
+  en: ({ profile, score, status, gaps, strengths }) => `
+You are Alpha AI, ExpandSpain’s strategic visa advisor. Write in English.
 
 CANDIDATE DATA:
-- Profile: ${safeProfile}
-- Score: ${scoreData.score}/100
-- Status: ${scoreData.status}
-- Critical Gaps: ${safeGaps || 'None identified'}
-- Strengths: ${safeStrengths || 'None identified'}
+- Profile: ${profile}
+- Score: ${score}/100
+- Status: ${status}
+- Critical Gaps: ${gaps || 'None identified'}
+- Strengths: ${strengths || 'None listed'}
 
-YOUR TASK: Generate a 3-paragraph analysis in ${langMap[language]} that SELLS Power Oracle™ (€97).
+GOAL: Produce a 3-paragraph analysis that SELLS Power Oracle™ (€97). Do not mention any other product.
+
+NON-NEGOTIABLE COPY RULES:
+- Max 280 words. No emojis.
+- Tone: clear, strategic, persuasive. No “guaranteed approval” claims.
+- Address the reader as “you” (never “the candidate”).
+- Use the exact gap names provided; do not invent gaps.
+- Mention “Power Oracle™” only in paragraph 3.
+- DO NOT mention Code +34 or full-service offers.
 
 MANDATORY STRUCTURE:
 
-PARAGRAPH 1 (3-4 lines) - Honest Technical Diagnosis:
-- Start with: "Your [Profile] profile with score [X]/100 indicates [Status]."
-- List 2-3 most critical gaps by name
-- State realistic rejection rate: "With these gaps unresolved, historical rejection rate is X%"
-- Use REAL statistics (adjust based on score range)
+PARAGRAPH 1 (3–4 lines) — Honest Technical Diagnosis:
+- Start with this EXACT sentence:
+  "Your [Profile] profile with a [X]/100 score indicates [Status]."
+- Then name 2–3 most critical gaps.
+- State a realistic historical rejection rate by score band:
+  • 0–39: 90–95%
+  • 40–59: 60–75%
+  • 60–74: 40–55%
+  • 75–89: 20–35%
+  • 90–100: 5–15%
 
-PARAGRAPH 2 (3-4 lines) - The Problem Nobody Tells:
-- Explain that information ≠ strategy
-- Use specific approach based on score:
-  * Score 0-39: "99% of candidates in this range apply without strategic preparation and waste €2,000+ on fees, apostilled documents, and time. The problem isn't lack of will—it's lack of structured roadmap."
-  * Score 40-59: "87% of candidates with these gaps are rejected even having 'information'. The problem isn't knowing the requirements—it's fulfilling them in the right order, with precise documentation, within the critical timings Spanish authorities demand."
-  * Score 60-74: "Candidates in this range often trust the 'almost certain' and lose approval due to avoidable technical details. A generic Google checklist doesn't capture the specific nuances of your [Profile] profile."
-  * Score 75-89: "73% of strong profiles are rejected due to documentary failures that a generic manual doesn't identify. The difference between approval and rejection isn't large—but it's surgical."
-  * Score 90-100: "Even excellent profiles face rejections due to poorly structured documentation or incorrect interpretation of technical requirements. Spanish authorities' decision is binary: perfect OR rejected."
+PARAGRAPH 2 (3–4 lines) — The Problem Nobody Tells:
+- Explain why information ≠ strategy, adapted by band:
+  • 0–39: “99% apply too early and waste €2,000+.”
+  • 40–59: “87% with these gaps are rejected even ‘knowing’ the rules.”
+  • 60–74: “The ‘almost certain’ fails on technical details no checklist captures.”
+  • 75–89: “Strong profiles fall on ‘surgical’ documentary failures.”
+  • 90–100: “Even excellent profiles fail due to poor document structuring.”
 
-PARAGRAPH 3 (5-6 lines) - Solution: Power Oracle™:
-- Present Power Oracle™ as the strategic solution for their score
-- Mention 4 modules objectively:
-  • Alpha Mindset: Use visa as European expansion base, not just country change
-  • Legal Anatomy: Complete requirements checklist adapted to your [Profile] profile
-  • War Room Docs: Ready templates for submission that avoid critical formatting errors
-  • Integrated Family: Complete planning for spouse, children, and parents (if applicable)
-- Adapt value proposition to score:
-  * Score 0-39: "Power Oracle™ creates your personalized preparation roadmap so you can apply safely when your profile is ready. You avoid wasting money applying prematurely."
-  * Score 40-59: "Power Oracle™ corrects your specific gaps and puts you in the approval range. Each gap has a clear step, necessary documents, and realistic timeline."
-  * Score 60-74: "Power Oracle™ optimizes every technical detail of your profile and positions you in the approval zone with safety margin. You transform 'good' into 'excellent'."
-  * Score 75-89: "Power Oracle™ eliminates any risk of rejection due to technical details and structures your application with professional precision. You leave nothing to chance."
-  * Score 90-100: "Power Oracle™ structures your documentation with the surgical precision Spanish authorities demand, ensuring favorable decision within 60 days."
-- Guarantees: "For €97 (with unconditional 3-day guarantee + 100% value credited to Code +34™ if you hire complete service), you transform your diagnosis into ACTION."
-${scoreData.score >= 75 ? '- Add ONE line: "If you prefer complete done-for-you service, Code +34™ includes all Power Oracle™ plus full execution with 99.7% success rate."' : ''}
+PARAGRAPH 3 (5–6 lines) — Solution: Power Oracle™:
+- Present Power Oracle™ as the practical method to go from diagnosis to execution.
+- Describe the 4 modules succinctly:
+  • Alpha Mindset — use the visa as a European expansion base
+  • Legal Anatomy — complete checklist adapted to your profile
+  • War Room Docs — ready templates that avoid critical errors
+  • Integrated Family — planning for spouse/children/parents (if applicable)
+- Tailor the value to the score band (readiness roadmap, gap-fix sequencing, technical optimization, surgical precision).
+- MANDATORY CTA (last line):
+  "Access the Power Oracle™ now and get your personalized roadmap in minutes."
+`.trim(),
 
-CTA (mandatory last line):
-"Access Power Oracle™ now and receive your personalized roadmap in minutes."
+  es: ({ profile, score, status, gaps, strengths }) => `
+Eres Alpha AI, asesora estratégica de visas de ExpandSpain. Escribe en Español.
 
-ABSOLUTE RULES:
-- Language: ${langMap[language]}
-- Maximum: 280 words
-- Tone: ${tone}
-- Use "you" (not "the candidate")
-- ZERO emojis
-- No guaranteed approval promises (only statistics)
-- Focus on STRATEGY > bureaucracy
-- Power Oracle™ MUST be mentioned in paragraph 3
-- Code +34™ only if score >= 75 AND only AFTER selling Oracle™
-- NEVER invent gaps not provided
-- ALWAYS use exact gap names from list
+DATOS DEL CANDIDATO:
+- Perfil: ${profile}
+- Puntuación: ${score}/100
+- Estado: ${status}
+- Gaps críticos: ${gaps || 'Ninguno identificado'}
+- Fortalezas: ${strengths || 'Ninguna listada'}
 
-Generate the analysis now following ALL rules above.`;
+OBJETIVO: Crear un análisis de 3 párrafos que VENDA Power Oracle™ (€97). No mencionar ningún otro producto.
 
-        // Configurar modelo com todas as correções
-        const model = genAI.getGenerativeModel({ 
-            model: "models/gemini-1.5-pro", // NOME CORRETO E COMPLETO DO MODELO
-            safetySettings: [
-                {
-                    category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-                    threshold: HarmBlockThreshold.BLOCK_NONE,
-                },
-                {
-                    category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                    threshold: HarmBlockThreshold.BLOCK_NONE,
-                },
-                {
-                    category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                    threshold: HarmBlockThreshold.BLOCK_NONE,
-                },
-                {
-                    category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                    threshold: HarmBlockThreshold.BLOCK_NONE,
-                },
-            ],
-            generationConfig: {
-                temperature: 0.7,
-                topK: 40,
-                topP: 0.95,
-                maxOutputTokens: 1024,
-            }
-        });
-        
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
+REGLAS DE COPY INNEGOCIABLES:
+- Máx. 280 palabras. Sin emojis.
+- Tono: claro, estratégico, persuasivo. Sin “aprobación garantizada”.
+- Dirígete como “tú” (no “el candidato”).
+- Usa los nombres exactos de los gaps provistos; no inventes gaps.
+- Menciona “Power Oracle™” solo en el 3º párrafo.
+- PROHIBIDO mencionar Code +34 o servicios full-service.
 
-        // Nova forma de ler a resposta, compatível com SDKs recentes
-        const analysis =
-            response?.text?.() ||
-            response?.candidates?.[0]?.content?.parts?.[0]?.text ||
-            '';
+ESTRUCTURA OBLIGATORIA:
 
-        if (!analysis || analysis.trim() === '') {
-            console.error('❌ A IA retornou uma resposta vazia (verifique API Key e permissões no Google Cloud).');
-            throw new Error('AI returned an empty or invalid response.');
-        }
-        
-        console.log('✅ Análise gerada com sucesso pela API v1');
-        console.log(`   Tamanho: ${analysis.length} caracteres`);
+PÁRRAFO 1 (3–4 líneas) — Diagnóstico Técnico Honesto:
+- Empieza con esta frase EXACTA:
+  "Tu perfil de [Perfil] con puntuación [X]/100 indica [Estado]."
+- Luego, nombra 2–3 gaps críticos.
+- Indica una tasa histórica de rechazo según banda:
+  • 0–39: 90–95%
+  • 40–59: 60–75%
+  • 60–74: 40–55%
+  • 75–89: 20–35%
+  • 90–100: 5–15%
 
-        const validationIssues = validateAIOutput(analysis, scoreData);
-        if (validationIssues.length > 0) {
-            console.warn('⚠️  Análise com problemas de validação:', validationIssues);
-            if (validationIssues.some(i => i.includes('Missing Power Oracle') || i.includes('Too short') || i.includes('null or not a string'))) {
-                console.error('❌ Análise inválida. Usando fallback.');
-                return generateFallbackAnalysis(scoreData, language);
-            }
-        }
+PÁRRAFO 2 (3–4 líneas) — El Problema Real:
+- Explica por qué información ≠ estrategia, según banda:
+  • 0–39: “El 99% aplica antes de tiempo y malgasta €2.000+.”
+  • 40–59: “El 87% con estos gaps es rechazado incluso ‘sabiendo’ los requisitos.”
+  • 60–74: “Lo ‘casi seguro’ falla por detalles técnicos invisibles en checklists.”
+  • 75–89: “Perfiles fuertes caen por fallos documentales ‘quirúrgicos’.”
+  • 90–100: “Incluso perfiles excelentes fallan por mala estructura documental.”
 
-        analysisCache.set(cacheKey, { analysis: analysis, timestamp: Date.now() });
-        console.log(`📦 Análise salva em cache (key: ${cacheKey})`);
-
-        return analysis;
-
-    } catch (error) {
-        console.error('❌ Erro final ao gerar análise com IA:', error.message);
-        
-        if (error.response) {
-            console.error('   Response:', error.response);
-        }
-        
-        console.warn('⚠️  Usando análise fallback');
-        return generateFallbackAnalysis(scoreData, language);
-    }
-}
-
-/**
- * Gera análise fallback se IA falhar
- */
-function generateFallbackAnalysis(scoreData, language) {
-    const score = scoreData.score;
-    const profile = scoreData.profile || 'Candidate';
-    const gapCount = scoreData.gaps?.length || 0;
-    const gapsList = scoreData.gaps?.slice(0, 3).join(', ') || 'none';
-    
-    const scoreRange = score < 40 ? '0-39' :
-                       score < 60 ? '40-59' :
-                       score < 75 ? '60-74' :
-                       score < 90 ? '75-89' : '90-100';
-    
-    const rejectionRates = {
-        '0-39': 94,
-        '40-59': 68,
-        '60-74': 45,
-        '75-89': 27,
-        '90-100': 8
-    };
-    
-    const rejectionRate = rejectionRates[scoreRange];
-    
-    const fallbacks = {
-        pt: {
-            '0-39': `Seu perfil de ${profile} com score de ${score}/100 indica necessidade de preparação crítica antes da aplicação. ${gapCount > 0 ? `Os principais gaps identificados são: ${gapsList}.` : 'Seu perfil precisa fortalecimento estratégico.'} Com esses gaps não resolvidos, a taxa de rejeição histórica é de ${rejectionRate}%.
-
-99% dos candidatos nessa faixa aplicam sem preparação estratégica e perdem €2.000+ em taxas de aplicação, documentos apostilados e tempo desperdiçado. O problema não é falta de vontade — é falta de roadmap estruturado.
-
-O Power Oracle™ cria seu roadmap personalizado de preparação para você aplicar com segurança quando seu perfil estiver pronto. Os 4 módulos incluem: Alpha Mindset para usar o visto como base de expansão europeia, Legal Anatomy com checklist completo adaptado ao seu perfil de ${profile}, War Room Docs com templates prontos que evitam erros de formatação críticos, e Integrated Family para planejamento familiar completo. Por €97 (com garantia incondicional de 30 dias + 100% do valor creditado no Code +34™), você transforma seu diagnóstico em AÇÃO e evita desperdiçar dinheiro aplicando prematuramente.
-
-Acesse o Power Oracle™ agora e receba seu roadmap personalizado em minutos.`,
-            
-            '40-59': `Seu perfil de ${profile} com score de ${score}/100 indica necessidade de otimização em pontos específicos. ${gapCount > 0 ? `Os principais gaps identificados são: ${gapsList}.` : 'Seu perfil tem potencial mas precisa ajustes.'} Com esses gaps não resolvidos, a taxa de rejeição histórica é de ${rejectionRate}%.
-
-87% dos candidatos com esses gaps são rejeitados mesmo tendo 'informação'. O problema não é saber os requisitos — é cumpri-los na ordem certa, com a documentação precisa e dentro dos timings críticos que as autoridades espanholas exigem.
-
-O Power Oracle™ corrige seus gaps específicos e te coloca na faixa de aprovação. Os 4 módulos incluem: Alpha Mindset para usar o visto como base de expansão europeia, Legal Anatomy com checklist completo adaptado ao seu perfil de ${profile}, War Room Docs com templates prontos que evitam erros de formatação críticos, e Integrated Family para planejamento familiar completo. Por €97 (com garantia incondicional de 30 dias + 100% do valor creditado no Code +34™), você transforma seu diagnóstico em AÇÃO e cada gap tem um passo claro, documentos necessários e timeline realista.
-
-Acesse o Power Oracle™ agora e receba seu roadmap personalizado em minutos.`,
-            
-            '60-74': `Seu perfil de ${profile} com score de ${score}/100 indica bom potencial com necessidade de otimização em pontos específicos. ${gapCount > 0 ? `Os principais gaps identificados são: ${gapsList}.` : 'Seu perfil está no caminho certo.'} Com esses gaps não resolvidos, a taxa de rejeição histórica é de ${rejectionRate}%.
-
-Candidatos nessa faixa frequentemente confiam no 'quase certo' e perdem aprovação por detalhes técnicos evitáveis. Um checklist genérico do Google não captura as nuances específicas do seu perfil de ${profile}.
-
-O Power Oracle™ otimiza cada detalhe técnico do seu perfil e te posiciona na zona de aprovação com margem de segurança. Os 4 módulos incluem: Alpha Mindset para usar o visto como base de expansão europeia, Legal Anatomy com checklist completo adaptado ao seu perfil de ${profile}, War Room Docs com templates prontos que evitam erros de formatação críticos, e Integrated Family para planejamento familiar completo. Por €97 (com garantia incondicional de 30 dias + 100% do valor creditado no Code +34™), você transforma 'bom' em 'excelente'.
-
-Acesse o Power Oracle™ agora e receba seu roadmap personalizado em minutos.`,
-            
-            '75-89': `Seu perfil de ${profile} com score de ${score}/100 indica um perfil forte com alta probabilidade de aprovação. ${gapCount > 0 ? `O principal gap identificado é: ${gapsList}.` : 'Seu perfil está muito bem posicionado.'} Com esse gap não resolvido, a taxa de rejeição histórica é de ${rejectionRate}%.
-
-73% dos perfis fortes são rejeitados por falhas documentais que um manual genérico não identifica. A diferença entre aprovação e rejeição não é grande — mas é cirúrgica.
-
-O Power Oracle™ elimina qualquer risco de rejeição por detalhes técnicos e estrutura sua aplicação com precisão profissional. Os 4 módulos incluem: Alpha Mindset para usar o visto como base de expansão europeia, Legal Anatomy com checklist completo adaptado ao seu perfil de ${profile}, War Room Docs com templates prontos que evitam erros de formatação críticos, e Integrated Family para planejamento familiar completo. Por €97 (com garantia incondicional de 30 dias + 100% do valor creditado no Code +34™), você não deixa nada ao acaso. Se preferir serviço completo done-for-you, o Code +34™ inclui todo o Power Oracle™ mais a execução completa com 99.7% de taxa de sucesso.
-
-Acesse o Power Oracle™ agora e receba seu roadmap personalizado em minutos.`,
-            
-            '90-100': `Seu perfil de ${profile} com score de ${score}/100 indica um perfil excelente. ${gapCount > 0 ? `O único ponto de atenção é: ${gapsList}.` : 'Seu perfil está em excelente posição.'} Mesmo com perfis excelentes, a taxa de rejeição por detalhes técnicos é de ${rejectionRate}%.
-
-Mesmo perfis excelentes enfrentam rejeições por documentação mal estruturada ou interpretação incorreta de requisitos técnicos. A decisão das autoridades espanholas é binária: perfeito OU rejeitado.
-
-O Power Oracle™ estrutura sua documentação com a precisão cirúrgica que as autoridades espanholas exigem, garantindo decisão favorável em até 60 dias. Os 4 módulos incluem: Alpha Mindset para usar o visto como base de expansão europeia, Legal Anatomy com checklist completo adaptado ao seu perfil de ${profile}, War Room Docs com templates prontos que evitam erros de formatação críticos, e Integrated Family para planejamento familiar completo. Por €97 (com garantia incondicional de 30 dias + 100% do valor creditado no Code +34™), você maximiza suas chances de aprovação rápida. Se preferir serviço completo done-for-you, o Code +34™ inclui todo o Power Oracle™ mais a execução completa com 99.7% de taxa de sucesso.
-
-Acesse o Power Oracle™ agora e receba seu roadmap personalizado em minutos.`
-        },
-        
-        en: { /* ... (O conteúdo completo para inglês foi omitido, mas deve ser mantido no seu arquivo) ... */ },
-        es: { /* ... (O conteúdo completo para espanhol foi omitido, mas deve ser mantido no seu arquivo) ... */ }
-    };
-    
-    return fallbacks[language]?.[scoreRange] || fallbacks['pt']?.[scoreRange] || fallbacks['pt']['40-59'];
-}
-
-module.exports = {
-    generateAIAnalysis
+PÁRRAFO 3 (5–6 líneas) — Solución: Power Oracle™:
+- Presenta Power Oracle™ como el método práctico para pasar del diagnóstico a la ejecución.
+- Describe los 4 módulos de forma objetiva:
+  • Alpha Mindset — base de expansión europea
+  • Legal Anatomy — checklist completo adaptado a tu perfil
+  • War Room Docs — plantillas listas que evitan errores críticos
+  • Integrated Family — planificación para cónyuge/hijos/padres (si aplica)
+- Ajusta el valor a la banda de puntuación (hoja de ruta, corrección de gaps, optimización técnica, precisión quirúrgica).
+- CTA OBLIGATORIA (última línea):
+  "Accede al Power Oracle™ ahora y recibe tu hoja de ruta personalizada en minutos."
+`.trim(),
 };
+
+// ======= Validação =======
+function validateAIOutput(analysis) {
+  const issues = [];
+  if (!analysis || typeof analysis !== 'string') {
+    issues.push('Saída vazia ou não-string');
+    return issues;
+  }
+  const words = analysis.trim().split(/\s+/).length;
+  if (words < 90) issues.push(`Muito curto (${words} palavras)`);
+  if (words > 320) issues.push(`Muito longo (${words} palavras)`);
+  if (!/Power Oracle™/i.test(analysis)) issues.push('Faltou mencionar Power Oracle™ no 3º parágrafo.');
+  if (/Code\s*\+34™/i.test(analysis)) issues.push('Mencionou Code +34™ (proibido).');
+
+  const paras = analysis.split(/\n\s*\n/).filter(p => p.trim().length > 30);
+  if (paras.length < 3) issues.push('Menos de 3 parágrafos úteis.');
+  return issues;
+}
+
+// ======= Fallback offline =======
+const FALLBACKS = {
+  pt: (score, profile, gaps=[]) => {
+    const band = score<40?'0-39':score<60?'40-59':score<75?'60-74':score<90?'75-89':'90-100';
+    const rate = { '0-39':93,'40-59':68,'60-74':48,'75-89':28,'90-100':9 }[band];
+    const gapsTxt = gaps.length ? gaps.slice(0,3).join(', ') : 'sem gaps críticos explicitados';
+    return [
+      `Seu perfil de ${profile} com pontuação ${score}/100 indica ${band}. Gaps prioritários: ${gapsTxt}. Com esses pontos sem correção, a taxa histórica de rejeição gira em torno de ${rate}%.`,
+      `Informação ≠ estratégia. Muitos perfis nesta faixa falham por sequência errada, documentação incompleta e prazos mal geridos — detalhes “cirúrgicos” que não aparecem em checklists genéricos.`,
+      `A solução prática é o Power Oracle™: um roadmap acionável que liga diagnóstico à execução. Você recebe: (1) Alpha Mindset, (2) Legal Anatomy adaptado ao seu perfil, (3) War Room Docs com modelos prontos, (4) Integrated Family. Acesse o Power Oracle™ agora e receba seu roadmap personalizado em minutos.`
+    ].join('\n\n');
+  },
+  en: (score, profile, gaps=[]) => {
+    const band = score<40?'0-39':score<60?'40-59':score<75?'60-74':score<90?'75-89':'90-100';
+    const rate = { '0-39':93,'40-59':68,'60-74':48,'75-89':28,'90-100':9 }[band];
+    const gapsTxt = gaps.length ? gaps.slice(0,3).join(', ') : 'no explicit critical gaps';
+    return [
+      `Your ${profile} profile with a ${score}/100 score indicates ${band}. Priority gaps: ${gapsTxt}. With these unresolved, historical rejection is ~${rate}%.`,
+      `Information ≠ strategy. Many profiles fail due to wrong sequencing, incomplete documentation, and timing — “surgical” details no generic checklist captures.`,
+      `The practical solution is Power Oracle™: an actionable roadmap from diagnosis to execution — (1) Alpha Mindset, (2) Legal Anatomy, (3) War Room Docs, (4) Integrated Family. Access the Power Oracle™ now and get your personalized roadmap in minutes.`
+    ].join('\n\n');
+  },
+  es: (score, profile, gaps=[]) => {
+    const band = score<40?'0-39':score<60?'40-59':score<75?'60-74':score<90?'75-89':'90-100';
+    const rate = { '0-39':93,'40-59':68,'60-74':48,'75-89':28,'90-100':9 }[band];
+    const gapsTxt = gaps.length ? gaps.slice(0,3).join(', ') : 'sin gaps críticos explícitos';
+    return [
+      `Tu perfil de ${profile} con ${score}/100 indica ${band}. Gaps prioritarios: ${gapsTxt}. Con ellos sin corregir, el rechazo histórico ronda el ${rate}%.`,
+      `Información ≠ estrategia. Muchos fallan por secuencia incorrecta, documentación incompleta y tiempos — detalles “quirúrgicos” que no aparecen en checklists genéricos.`,
+      `La solución práctica es Power Oracle™: una hoja de ruta accionable de diagnóstico a ejecución — (1) Alpha Mindset, (2) Legal Anatomy, (3) War Room Docs, (4) Integrated Family. Accede al Power Oracle™ ahora y recibe tu hoja de ruta personalizada en minutos.`
+    ].join('\n\n');
+  }
+};
+
+// ======= Geração =======
+async function generateAIAnalysis(scoreData, answers, language = 'pt') {
+  const lang = ['pt','en','es'].includes(language) ? language : 'pt';
+
+  try {
+    const cacheKey = generateCacheKey(scoreData, lang);
+    const cached = analysisCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      return cached.analysis;
+    }
+
+    const safeProfile = sanitizeForPrompt(scoreData?.profile || 'Candidato');
+    const safeGaps = (scoreData?.gaps || []).map(sanitizeForPrompt).join(', ');
+    const safeStrengths = (scoreData?.strengths || []).map(sanitizeForPrompt).join(', ');
+    const score = Number(scoreData?.score || 0);
+    const status = sanitizeForPrompt(scoreData?.status || 'Em avaliação');
+
+    const prompt = PROMPT_TEMPLATES[lang]({
+      profile: safeProfile,
+      score,
+      status,
+      gaps: safeGaps,
+      strengths: safeStrengths
+    });
+
+    // Modelo principal e fallback
+    let result;
+    try {
+      const model = genAI.getGenerativeModel({
+        model: MODEL_ID,
+        safetySettings: [
+          { category: HarmCategory.HARM_CATEGORY_HARASSMENT,        threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,       threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        ],
+        generationConfig: {
+          temperature: 0.7, topK: 40, topP: 0.95, maxOutputTokens: 1024
+        }
+      });
+      result = await model.generateContent(prompt);
+    } catch (e) {
+      const fallbackId = MODEL_CANDIDATES.find(m => m !== MODEL_ID);
+      if (!fallbackId) throw e;
+      const fallbackModel = genAI.getGenerativeModel({ model: fallbackId });
+      result = await fallbackModel.generateContent(prompt);
+    }
+
+    const response = await result.response;
+    const analysis =
+      (typeof response.text === 'function' ? response.text() : null) ||
+      response?.candidates?.[0]?.content?.parts?.map(p => p.text).join('\n') ||
+      '';
+
+    if (!analysis || analysis.trim() === '') throw new Error('Resposta vazia da IA.');
+
+    // Validação
+    const issues = validateAIOutput(analysis);
+    if (issues.length) {
+      const critical = issues.some(i => /Power Oracle™|Code \+34™|vazia/.test(i));
+      if (critical) {
+        const fb = FALLBACKS[lang](score, safeProfile, scoreData?.gaps || []);
+        analysisCache.set(cacheKey, { analysis: fb, timestamp: Date.now() });
+        return fb;
+      }
+    }
+
+    analysisCache.set(cacheKey, { analysis, timestamp: Date.now() });
+    return analysis;
+
+  } catch (err) {
+    const langFb = ['pt','en','es'].includes(language) ? language : 'pt';
+    const score = Number(scoreData?.score || 0);
+    const fb = FALLBACKS[langFb](score, sanitizeForPrompt(scoreData?.profile || 'Candidato'), scoreData?.gaps || []);
+    return fb;
+  }
+}
+
+module.exports = { generateAIAnalysis };

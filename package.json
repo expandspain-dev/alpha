@@ -1,11 +1,12 @@
 {
   "name": "expandspain-alpha-backend",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "ExpandSpain Alpha™ Self-Diagnosis Backend with AI and WhatsApp - Optimized",
   "main": "server.js",
+  "type": "commonjs",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js",
+    "start": "NODE_ENV=production node server.js",
+    "dev": "NODE_ENV=development nodemon server.js",
     "test": "echo \"No tests yet\" && exit 0"
   },
   "keywords": [
@@ -18,22 +19,22 @@
   "author": "ExpandSpain",
   "license": "PROPRIETARY",
   "dependencies": {
-    "@google/generative-ai": "^0.14.1",
+    "@google/generative-ai": "^0.21.0",
     "@sendgrid/mail": "^8.1.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "express": "^4.18.2",
-    "express-rate-limit": "^7.1.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
     "express-validator": "^7.0.1",
     "helmet": "^7.1.0",
-    "mysql2": "^3.6.5",
-    "twilio": "^4.19.0",
+    "mysql2": "^3.9.7",
+    "twilio": "^4.21.0",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "nodemon": "^3.1.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   }
 }

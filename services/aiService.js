@@ -1,14 +1,14 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * EXPANDSPAIN ALPHA™ - AI SERVICE v9.0 FINAL
+ * EXPANDSPAIN ALPHA™ - AI SERVICE v10.1 FINAL (A/B TESTING READY)
  * ═══════════════════════════════════════════════════════════════════════════
  * 
- * MODELO FUNCIONAL: gemini-2.0-flash-exp
- * Data: 2025-10-10
- * Status: TESTADO E FUNCIONANDO
+ * MODELO: gemini-2.0-flash-exp
+ * Copy: Conciso (120-220 palavras), honesto, direto
+ * Versões: Abertura A/B + CTA A/B/C/D/E testáveis
  * 
  * @author ExpandSpain Team
- * @version 9.0
+ * @version 10.1
  * @license Proprietary
  */
 
@@ -17,19 +17,10 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CONFIGURAÇÃO DO MODELO GEMINI
+// CONFIGURAÇÃO
 // ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * IMPORTANTE: Baseado em testes de 2025-10-10:
- * - gemini-pro: ❌ 404 Not Found
- * - gemini-1.5-flash: ❌ 404 Not Found
- * - gemini-1.5-pro: ❌ 404 Not Found
- * - gemini-2.5-flash: ❌ 404 Not Found
- * - gemini-2.0-flash-exp: ✅ FUNCIONA (experimental mas estável)
- */
 const MODEL_ID = 'gemini-2.0-flash-exp';
-
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 if (!GEMINI_API_KEY) {
@@ -39,11 +30,60 @@ if (!GEMINI_API_KEY) {
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-console.log('✅ [aiService v9.0] Gemini AI inicializado');
+console.log('✅ [aiService v10.1] Gemini AI inicializado (A/B Testing)');
 console.log(`   Modelo: ${MODEL_ID}`);
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CACHE EM MEMÓRIA (7 dias TTL)
+// CONFIGURAÇÃO DE TESTES A/B
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Escolha qual versão usar (ou randomize para teste A/B)
+const ABERTURA_VERSION = 'A'; // 'A' ou 'B'
+const CTA_VERSION = 'A'; // 'A', 'B', 'C', 'D', 'E'
+
+const ABERTURAS = {
+    A: {
+        pt: "Você já tem os documentos. Falta a sequência vencedora que o governo espanhol aprova.",
+        en: "You already have the documents. What's missing is the winning sequence that the Spanish government approves.",
+        es: "Ya tienes los documentos. Falta la secuencia ganadora que el gobierno español aprueba."
+    },
+    B: {
+        pt: (profile, score, status) => `Agora você sabe a que distância está de obter o visto. Seu perfil de ${profile} com ${score}/100 indica ${status}.`,
+        en: (profile, score, status) => `Now you know your distance to obtaining the visa. Your ${profile} profile with ${score}/100 indicates ${status}.`,
+        es: (profile, score, status) => `Ahora sabes a qué distancia estás de obtener el visado. Tu perfil de ${profile} con ${score}/100 indica ${status}.`
+    }
+};
+
+const CTAS = {
+    A: {
+        pt: "Entre agora, pegue o Power Oracle™, e submeta seu pedido vencedor.",
+        en: "Enter now, get the Power Oracle™, and submit your winning application.",
+        es: "Entra ahora, consigue el Power Oracle™, y presenta tu solicitud ganadora."
+    },
+    B: {
+        pt: "Clique, gere o roteiro personalizado em 3 minutos, e siga o caminho eficaz.",
+        en: "Click, generate your personalized roadmap in 3 minutes, and follow the effective path.",
+        es: "Haz clic, genera tu hoja de ruta personalizada en 3 minutos, y sigue el camino eficaz."
+    },
+    C: {
+        pt: "Acesse o Power Oracle™ agora e transforme documentos em aprovação em minutos.",
+        en: "Access the Power Oracle™ now and transform documents into approval in minutes.",
+        es: "Accede al Power Oracle™ ahora y transforma documentos en aprobación en minutos."
+    },
+    D: {
+        pt: "Comece agora: 4 módulos, roteiro claro, submissão certa.",
+        en: "Start now: 4 modules, clear roadmap, right submission.",
+        es: "Comienza ahora: 4 módulos, hoja de ruta clara, presentación correcta."
+    },
+    E: {
+        pt: "Clique aqui, monte seu dossiê vencedor em 3 minutos, e aplique com confiança.",
+        en: "Click here, build your winning dossier in 3 minutes, and apply with confidence.",
+        es: "Haz clic aquí, monta tu dosier ganador en 3 minutos, y presenta con confianza."
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CACHE EM MEMÓRIA
 // ═══════════════════════════════════════════════════════════════════════════
 
 const analysisCache = new Map();
@@ -67,12 +107,12 @@ setInterval(() => {
 // UTILITY FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
-function generateCacheKey(scoreData, language) {
+function generateCacheKey(scoreData, language, aberturaVer, ctaVer) {
     const scoreRange = Math.floor((scoreData?.score || 0) / 10) * 10;
     const gapsKey = (scoreData?.gaps || []).map(String).sort().join('|');
     const statusKey = String(scoreData?.status || '').toLowerCase().replace(/\s+/g, '-');
     const profileKey = String(scoreData?.profile || '').toLowerCase().replace(/\s+/g, '-');
-    return `${language}:${scoreRange}:${statusKey}:${profileKey}:${gapsKey}`;
+    return `${language}:${scoreRange}:${statusKey}:${profileKey}:${gapsKey}:${aberturaVer}:${ctaVer}`;
 }
 
 function sanitizeForPrompt(text) {
@@ -84,161 +124,166 @@ function sanitizeForPrompt(text) {
         .trim();
 }
 
+function getScoreBand(score) {
+    if (score >= 90) return '90-100';
+    if (score >= 75) return '75-89';
+    if (score >= 60) return '60-74';
+    if (score >= 40) return '40-59';
+    return '0-39';
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
-// PROMPTS COMPLETOS (PT/EN/ES) - FOCO EXCLUSIVO EM POWER ORACLE™
+// PROMPTS v10.1 - CONCISO (120-220 PALAVRAS), HONESTO, DIRETO
 // ═══════════════════════════════════════════════════════════════════════════
 
 const PROMPT_TEMPLATES = {
-    pt: ({ profile, score, status, gaps, strengths }) => `
+    pt: ({ profile, score, status, gaps, strengths }) => {
+        const band = getScoreBand(score);
+        
+        const abertura = typeof ABERTURAS[ABERTURA_VERSION].pt === 'function'
+            ? ABERTURAS[ABERTURA_VERSION].pt(profile, score, status)
+            : ABERTURAS[ABERTURA_VERSION].pt;
+        
+        const cta = CTAS[CTA_VERSION].pt;
+        
+        const problems = {
+            '90-100': `O consulado espanhol avalia a ESTRUTURA da apresentação: ordem cronológica dos contratos, formatação de extratos bancários, e consistência entre documentos. O governo não analisa apenas SE você tem os documentos, mas COMO eles contam sua história profissional de forma convincente.`,
+            '75-89': `O governo espanhol não analisa apenas SE você tem os documentos, mas COMO eles contam sua história profissional. A sequência de apresentação, o formato dos anexos, e a coerência entre declarações são critérios decisivos que não aparecem em checklists genéricos.`,
+            '60-74': `O consulado avalia se sua documentação forma uma narrativa clara de estabilidade. Isso exige saber ONDE cada documento entra no dossiê, QUANDO apresentá-lo, e COMO formatá-lo segundo padrões consulares técnicos.`,
+            '40-59': `Você sabe QUAIS documentos precisa, mas o próximo desafio é saber COMO estruturá-los. O governo espanhol tem critérios técnicos rigorosos: formatação exata de PDFs, ordem lógica de anexos, tipo correto de tradução.`,
+            '0-39': `Reunir documentos é fase 1. Estruturá-los segundo os padrões do consulado é fase 2. Sem um roadmap claro, candidatos gastam meses tentando descobrir qual documento vem primeiro, como formatar cada PDF, quando usar tradução juramentada.`
+        };
+        
+        return `
 Você é a Alpha AI, consultora estratégica de vistos da ExpandSpain. Escreva em Português do Brasil.
 
 DADOS DO CANDIDATO:
 - Perfil: ${profile}
-- Pontuação: ${score}/100
+- Pontuação: ${score}/100 (Faixa: ${band})
 - Status: ${status}
-- Gaps críticos: ${gaps || 'Nenhum identificado'}
-- Forças: ${strengths || 'Nenhuma listada'}
 
-OBJETIVO: Gerar uma análise de 3 parágrafos que VENDA o Power Oracle™ (€97). Não mencionar qualquer outro produto.
+OBJETIVO: Gerar uma análise CONCISA de 3 parágrafos (120-220 palavras) que VENDA o Power Oracle™ (€97). Tom direto e honesto.
 
 REGRAS ABSOLUTAS:
-- Máximo: 280 palavras. ZERO emojis.
-- Tom: claro, estratégico, persuasivo, sem prometer "aprovação garantida".
-- Falar diretamente com "você" (não use "o candidato").
-- Usar exatamente os nomes dos gaps fornecidos (não inventar novos).
-- Mencionar "Power Oracle™" somente no 3º parágrafo.
+- Extensão: 120-220 palavras. ZERO emojis.
+- Tom: direto, estratégico, honesto (sem números inventados).
+- Falar diretamente com "você".
+- Mencionar "Power Oracle™" apenas no 3º parágrafo.
 
 ESTRUTURA OBRIGATÓRIA:
 
-PARÁGRAFO 1 (3–4 linhas) — Diagnóstico Técnico:
-- Iniciar com: "Seu perfil de [Perfil] com pontuação [X]/100 indica [Status]."
-- Listar 2–3 gaps críticos pelo nome.
-- Indicar taxa de rejeição histórica:
-  • 0–39: 90–95%
-  • 40–59: 60–75%
-  • 60–74: 40–55%
-  • 75–89: 20–35%
-  • 90–100: 5–15%
+PARÁGRAFO 1 (2-3 linhas) — Abertura + Gap:
+"${abertura} A maioria dos candidatos não percebe: ter os documentos corretos não é o mesmo que apresentá-los como o governo espanhol exige para conceder o visto."
 
-PARÁGRAFO 2 (3–4 linhas) — O Problema Real:
-- Explicar por que informação ≠ estratégia por faixa:
-  • 0–39: "99% aplicam antes de estarem prontos e desperdiçam €2.000+."
-  • 40–59: "87% com esses gaps são rejeitados mesmo 'sabendo' os requisitos."
-  • 60–74: "O 'quase certo' cai por detalhes técnicos invisíveis."
-  • 75–89: "Perfis fortes perdem por falhas documentais cirúrgicas."
-  • 90–100: "Mesmo excelentes falham por estrutura documental deficiente."
+PARÁGRAFO 2 (3-4 linhas) — Problema Invisível:
+"${problems[band]}"
 
-PARÁGRAFO 3 (5–6 linhas) — Solução: Power Oracle™:
-- Apresentar Power Oracle™ como solução prática.
-- Descrever 4 módulos:
-  • Alpha Mindset — use o visto como base de expansão europeia
-  • Legal Anatomy — checklist completo adaptado ao seu perfil
-  • War Room Docs — modelos prontos que evitam erros críticos
-  • Integrated Family — planejamento familiar completo
-- CTA final: "Acesse o Power Oracle™ agora e receba seu roadmap personalizado em minutos."
-`.trim(),
+PARÁGRAFO 3 (4-5 linhas) — Power Oracle™ = Solução:
+"O próximo passo é adequar seus documentos ao método Power Oracle™ de obter o visto. Este plano de ação transforma 'documentos corretos' em 'aplicação aprovada' através de 4 módulos: (1) Alpha Mindset — narrativa estratégica de expansão europeia, (2) Legal Anatomy — checklist técnico adaptado ao seu perfil, com prazos e ordem exata, (3) War Room Docs — templates pré-formatados seguindo padrões consulares, (4) Integrated Family — roadmap familiar integrado. ${cta}"
 
-    en: ({ profile, score, status, gaps, strengths }) => `
+IMPORTANTE: Escreva de forma fluida e natural, mantendo a estrutura mas usando suas próprias palavras. Seja conciso e direto.
+`.trim();
+    },
+    
+    en: ({ profile, score, status, gaps, strengths }) => {
+        const band = getScoreBand(score);
+        
+        const abertura = typeof ABERTURAS[ABERTURA_VERSION].en === 'function'
+            ? ABERTURAS[ABERTURA_VERSION].en(profile, score, status)
+            : ABERTURAS[ABERTURA_VERSION].en;
+        
+        const cta = CTAS[CTA_VERSION].en;
+        
+        const problems = {
+            '90-100': `The Spanish consulate evaluates the STRUCTURE of presentation: chronological order of contracts, bank statement formatting, and consistency across documents. The government doesn't just assess IF you have documents, but HOW they tell your professional story convincingly.`,
+            '75-89': `The Spanish government doesn't just assess IF you have documents, but HOW they tell your professional story. Presentation sequence, attachment format, and coherence between statements are decisive criteria not found in generic checklists.`,
+            '60-74': `The consulate evaluates whether your documentation forms a clear narrative of stability. This requires knowing WHERE each document enters the dossier, WHEN to present it, and HOW to format it according to technical consular standards.`,
+            '40-59': `You know WHICH documents you need, but the next challenge is knowing HOW to structure them. The Spanish government has rigorous technical criteria: exact PDF formatting, logical attachment order, correct type of translation.`,
+            '0-39': `Gathering documents is phase 1. Structuring them according to consulate standards is phase 2. Without a clear roadmap, candidates spend months trying to figure out which document comes first, how to format each PDF, when to use sworn translation.`
+        };
+        
+        return `
 You are Alpha AI, ExpandSpain's strategic visa advisor. Write in English.
 
 CANDIDATE DATA:
 - Profile: ${profile}
-- Score: ${score}/100
+- Score: ${score}/100 (Band: ${band})
 - Status: ${status}
-- Critical Gaps: ${gaps || 'None identified'}
-- Strengths: ${strengths || 'None listed'}
 
-GOAL: Produce a 3-paragraph analysis that SELLS Power Oracle™ (€97). Do not mention any other product.
+GOAL: Produce a CONCISE 3-paragraph analysis (120-220 words) that SELLS Power Oracle™ (€97). Direct and honest tone.
 
 NON-NEGOTIABLE RULES:
-- Max 280 words. No emojis.
-- Tone: clear, strategic, persuasive. No "guaranteed approval" claims.
-- Address as "you" (never "the candidate").
-- Use exact gap names provided; do not invent gaps.
+- Length: 120-220 words. No emojis.
+- Tone: direct, strategic, honest (no made-up numbers).
+- Address as "you."
 - Mention "Power Oracle™" only in paragraph 3.
 
 MANDATORY STRUCTURE:
 
-PARAGRAPH 1 (3–4 lines) — Technical Diagnosis:
-- Start with: "Your [Profile] profile with a [X]/100 score indicates [Status]."
-- Name 2–3 most critical gaps.
-- State realistic historical rejection rate:
-  • 0–39: 90–95%
-  • 40–59: 60–75%
-  • 60–74: 40–55%
-  • 75–89: 20–35%
-  • 90–100: 5–15%
+PARAGRAPH 1 (2-3 lines) — Opening + Gap:
+"${abertura} Most candidates don't realize: having the right documents isn't the same as presenting them as the Spanish government requires to grant the visa."
 
-PARAGRAPH 2 (3–4 lines) — The Real Problem:
-- Explain why information ≠ strategy by band:
-  • 0–39: "99% apply too early and waste €2,000+."
-  • 40–59: "87% with these gaps are rejected even 'knowing' the rules."
-  • 60–74: "The 'almost certain' fails on technical details."
-  • 75–89: "Strong profiles fall on surgical documentary failures."
-  • 90–100: "Even excellent profiles fail due to poor structuring."
+PARAGRAPH 2 (3-4 lines) — Invisible Problem:
+"${problems[band]}"
 
-PARAGRAPH 3 (5–6 lines) — Solution: Power Oracle™:
-- Present Power Oracle™ as practical solution.
-- Describe 4 modules:
-  • Alpha Mindset — use visa as European expansion base
-  • Legal Anatomy — complete checklist adapted to your profile
-  • War Room Docs — ready templates avoiding critical errors
-  • Integrated Family — complete family planning
-- Final CTA: "Access the Power Oracle™ now and get your personalized roadmap in minutes."
-`.trim(),
+PARAGRAPH 3 (4-5 lines) — Power Oracle™ = Solution:
+"The next step is to align your documents with the Power Oracle™ method for obtaining the visa. This action plan transforms 'right documents' into 'approved application' through 4 modules: (1) Alpha Mindset — strategic European expansion narrative, (2) Legal Anatomy — technical checklist adapted to your profile, with exact deadlines and order, (3) War Room Docs — pre-formatted templates following consular standards, (4) Integrated Family — integrated family roadmap. ${cta}"
 
-    es: ({ profile, score, status, gaps, strengths }) => `
+IMPORTANT: Write fluidly and naturally, maintaining the structure but using your own words. Be concise and direct.
+`.trim();
+    },
+    
+    es: ({ profile, score, status, gaps, strengths }) => {
+        const band = getScoreBand(score);
+        
+        const abertura = typeof ABERTURAS[ABERTURA_VERSION].es === 'function'
+            ? ABERTURAS[ABERTURA_VERSION].es(profile, score, status)
+            : ABERTURAS[ABERTURA_VERSION].es;
+        
+        const cta = CTAS[CTA_VERSION].es;
+        
+        const problems = {
+            '90-100': `El consulado español evalúa la ESTRUCTURA de presentación: orden cronológico de contratos, formato de extractos bancarios, y consistencia entre documentos. El gobierno no evalúa solo SI tienes los documentos, sino CÓMO cuentan tu historia profesional de forma convincente.`,
+            '75-89': `El gobierno español no evalúa solo SI tienes los documentos, sino CÓMO cuentan tu historia profesional. La secuencia de presentación, el formato de anexos, y la coherencia entre declaraciones son criterios decisivos que no aparecen en checklists genéricos.`,
+            '60-74': `El consulado evalúa si tu documentación forma una narrativa clara de estabilidad. Esto requiere saber DÓNDE entra cada documento en el dosier, CUÁNDO presentarlo, y CÓMO formatearlo según estándares consulares técnicos.`,
+            '40-59': `Sabes QUÉ documentos necesitas, pero el siguiente desafío es saber CÓMO estructurarlos. El gobierno español tiene criterios técnicos rigurosos: formato exacto de PDFs, orden lógico de anexos, tipo correcto de traducción.`,
+            '0-39': `Reunir documentos es fase 1. Estructurarlos según estándares consulares es fase 2. Sin un roadmap claro, candidatos pasan meses intentando descubrir qué documento va primero, cómo formatear cada PDF, cuándo usar traducción jurada.`
+        };
+        
+        return `
 Eres Alpha AI, asesora estratégica de visas de ExpandSpain. Escribe en Español.
 
 DATOS DEL CANDIDATO:
 - Perfil: ${profile}
-- Puntuación: ${score}/100
+- Puntuación: ${score}/100 (Banda: ${band})
 - Estado: ${status}
-- Gaps críticos: ${gaps || 'Ninguno identificado'}
-- Fortalezas: ${strengths || 'Ninguna listada'}
 
-OBJETIVO: Crear un análisis de 3 párrafos que VENDA Power Oracle™ (€97). No mencionar ningún otro producto.
+OBJETIVO: Crear un análisis CONCISO de 3 párrafos (120-220 palabras) que VENDA Power Oracle™ (€97). Tono directo y honesto.
 
 REGLAS INNEGOCIABLES:
-- Máx. 280 palabras. Sin emojis.
-- Tono: claro, estratégico, persuasivo. Sin "aprobación garantizada".
-- Dirígete como "tú" (no "el candidato").
-- Usa nombres exactos de gaps; no inventes.
+- Extensión: 120-220 palabras. Sin emojis.
+- Tono: directo, estratégico, honesto (sin números inventados).
+- Dirígete como "tú."
 - Menciona "Power Oracle™" solo en párrafo 3.
 
 ESTRUCTURA OBLIGATORIA:
 
-PÁRRAFO 1 (3–4 líneas) — Diagnóstico Técnico:
-- Empieza con: "Tu perfil de [Perfil] con puntuación [X]/100 indica [Estado]."
-- Nombra 2–3 gaps críticos.
-- Indica tasa histórica de rechazo:
-  • 0–39: 90–95%
-  • 40–59: 60–75%
-  • 60–74: 40–55%
-  • 75–89: 20–35%
-  • 90–100: 5–15%
+PÁRRAFO 1 (2-3 líneas) — Apertura + Gap:
+"${abertura} La mayoría de los candidatos no percibe: tener los documentos correctos no es lo mismo que presentarlos como el gobierno español exige para conceder el visado."
 
-PÁRRAFO 2 (3–4 líneas) — El Problema Real:
-- Explica por qué información ≠ estrategia por banda:
-  • 0–39: "El 99% aplica antes de tiempo y malgasta €2.000+."
-  • 40–59: "El 87% con estos gaps es rechazado sabiendo requisitos."
-  • 60–74: "Lo casi seguro falla por detalles técnicos invisibles."
-  • 75–89: "Perfiles fuertes caen por fallos documentales quirúrgicos."
-  • 90–100: "Incluso excelentes fallan por mala estructura."
+PÁRRAFO 2 (3-4 líneas) — Problema Invisible:
+"${problems[band]}"
 
-PÁRRAFO 3 (5–6 líneas) — Solución: Power Oracle™:
-- Presenta Power Oracle™ como solución práctica.
-- Describe 4 módulos:
-  • Alpha Mindset — base de expansión europea
-  • Legal Anatomy — checklist completo adaptado
-  • War Room Docs — plantillas listas evitando errores
-  • Integrated Family — planificación familiar completa
-- CTA final: "Accede al Power Oracle™ ahora y recibe tu hoja de ruta personalizada en minutos."
-`.trim()
+PÁRRAFO 3 (4-5 líneas) — Power Oracle™ = Solución:
+"El siguiente paso es adecuar tus documentos al método Power Oracle™ de obtener el visado. Este plan de acción transforma 'documentos correctos' en 'solicitud aprobada' a través de 4 módulos: (1) Alpha Mindset — narrativa estratégica de expansión europea, (2) Legal Anatomy — checklist técnico adaptado a tu perfil, con plazos y orden exacto, (3) War Room Docs — plantillas pre-formateadas siguiendo estándares consulares, (4) Integrated Family — roadmap familiar integrado. ${cta}"
+
+IMPORTANTE: Escribe de forma fluida y natural, manteniendo la estructura pero usando tus propias palabras. Sé conciso y directo.
+`.trim();
+    }
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// VALIDAÇÃO DE OUTPUT
+// VALIDAÇÃO DE OUTPUT (AJUSTADA: 120-220 PALAVRAS)
 // ═══════════════════════════════════════════════════════════════════════════
 
 function validateAIOutput(analysis) {
@@ -256,18 +301,18 @@ function validateAIOutput(analysis) {
     }
     
     const words = trimmed.split(/\s+/).length;
-    if (words < 90) {
-        issues.push(`Muito curto (${words} palavras, mínimo 90)`);
+    if (words < 120) {
+        issues.push(`Muito curto (${words} palavras, mínimo 120)`);
     }
-    if (words > 350) {
-        issues.push(`Muito longo (${words} palavras, máximo 350)`);
+    if (words > 220) {
+        issues.push(`Muito longo (${words} palavras, máximo 220)`);
     }
     
     if (!/Power Oracle/i.test(trimmed)) {
         issues.push('Faltou mencionar Power Oracle™');
     }
     
-    const paragraphs = trimmed.split(/\n\s*\n/).filter(p => p.trim().length > 30);
+    const paragraphs = trimmed.split(/\n\s*\n/).filter(p => p.trim().length > 20);
     if (paragraphs.length < 2) {
         issues.push(`Estrutura insuficiente (${paragraphs.length} parágrafos, mínimo 2)`);
     }
@@ -276,74 +321,50 @@ function validateAIOutput(analysis) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// FALLBACKS OFFLINE (PT/EN/ES)
+// FALLBACKS OFFLINE (120-220 PALAVRAS)
 // ═══════════════════════════════════════════════════════════════════════════
 
 const FALLBACKS = {
-    pt: (score, profile, gaps = []) => {
-        const band = score < 40 ? '0-39' : score < 60 ? '40-59' : score < 75 ? '60-74' : score < 90 ? '75-89' : '90-100';
-        const rate = { '0-39': 93, '40-59': 68, '60-74': 48, '75-89': 28, '90-100': 9 }[band];
-        const gapsTxt = gaps.length ? gaps.slice(0, 3).join(', ') : 'sem gaps críticos explicitados';
+    pt: (score, profile) => {
+        const abertura = typeof ABERTURAS[ABERTURA_VERSION].pt === 'function'
+            ? ABERTURAS[ABERTURA_VERSION].pt(profile, score, 'em avaliação')
+            : ABERTURAS[ABERTURA_VERSION].pt;
         
-        const statusText = {
-            '0-39': 'necessidade de preparação crítica',
-            '40-59': 'necessidade de otimização',
-            '60-74': 'bom potencial',
-            '75-89': 'perfil forte',
-            '90-100': 'perfil excelente'
-        }[band];
+        const cta = CTAS[CTA_VERSION].pt;
         
-        return [
-            `Seu perfil de ${profile} com pontuação ${score}/100 indica ${statusText}. Gaps prioritários: ${gapsTxt}. Com esses pontos sem correção, a taxa histórica de rejeição gira em torno de ${rate}%.`,
-            
-            `Informação ≠ estratégia. Muitos perfis nesta faixa falham por sequência errada, documentação incompleta e prazos mal geridos — detalhes cirúrgicos que não aparecem em checklists genéricos disponíveis online.`,
-            
-            `A solução prática é o Power Oracle™: um roadmap acionável que liga diagnóstico à execução. Você recebe: (1) Alpha Mindset para usar o visto como base de expansão europeia, (2) Legal Anatomy com checklist completo adaptado ao seu perfil de ${profile}, (3) War Room Docs com modelos prontos que evitam erros críticos de formatação, (4) Integrated Family para planejamento familiar completo. Por €97 com garantia incondicional de 30 dias, você transforma seu diagnóstico em ação. Acesse o Power Oracle™ agora e receba seu roadmap personalizado em minutos.`
-        ].join('\n\n');
+        return `${abertura} A maioria dos candidatos não percebe: ter os documentos corretos não é o mesmo que apresentá-los como o governo espanhol exige para conceder o visto.
+
+O consulado espanhol avalia a ESTRUTURA da apresentação: ordem cronológica, formatação técnica, e consistência entre documentos. O governo não analisa apenas SE você tem os documentos, mas COMO eles contam sua história profissional.
+
+O próximo passo é adequar seus documentos ao método Power Oracle™ de obter o visto. Este plano de ação transforma 'documentos corretos' em 'aplicação aprovada' através de 4 módulos: (1) Alpha Mindset, (2) Legal Anatomy, (3) War Room Docs, (4) Integrated Family. ${cta}`;
     },
     
-    en: (score, profile, gaps = []) => {
-        const band = score < 40 ? '0-39' : score < 60 ? '40-59' : score < 75 ? '60-74' : score < 90 ? '75-89' : '90-100';
-        const rate = { '0-39': 93, '40-59': 68, '60-74': 48, '75-89': 28, '90-100': 9 }[band];
-        const gapsTxt = gaps.length ? gaps.slice(0, 3).join(', ') : 'no explicit critical gaps';
+    en: (score, profile) => {
+        const abertura = typeof ABERTURAS[ABERTURA_VERSION].en === 'function'
+            ? ABERTURAS[ABERTURA_VERSION].en(profile, score, 'under evaluation')
+            : ABERTURAS[ABERTURA_VERSION].en;
         
-        const statusText = {
-            '0-39': 'critical preparation needed',
-            '40-59': 'optimization required',
-            '60-74': 'good potential',
-            '75-89': 'strong profile',
-            '90-100': 'excellent profile'
-        }[band];
+        const cta = CTAS[CTA_VERSION].en;
         
-        return [
-            `Your ${profile} profile with a ${score}/100 score indicates ${statusText}. Priority gaps: ${gapsTxt}. With these unresolved, historical rejection rate is approximately ${rate}%.`,
-            
-            `Information ≠ strategy. Many profiles in this range fail due to wrong sequencing, incomplete documentation, and poor timing management — surgical details no generic online checklist captures.`,
-            
-            `The practical solution is Power Oracle™: an actionable roadmap from diagnosis to execution. You get: (1) Alpha Mindset to use the visa as European expansion base, (2) Legal Anatomy with complete checklist adapted to your ${profile} profile, (3) War Room Docs with ready templates that avoid critical formatting errors, (4) Integrated Family for complete family planning. For €97 with unconditional 30-day guarantee, you transform your diagnosis into action. Access the Power Oracle™ now and get your personalized roadmap in minutes.`
-        ].join('\n\n');
+        return `${abertura} Most candidates don't realize: having the right documents isn't the same as presenting them as the Spanish government requires to grant the visa.
+
+The Spanish consulate evaluates the STRUCTURE of presentation: chronological order, technical formatting, and consistency across documents. The government doesn't just assess IF you have documents, but HOW they tell your professional story.
+
+The next step is to align your documents with the Power Oracle™ method for obtaining the visa. This action plan transforms 'right documents' into 'approved application' through 4 modules: (1) Alpha Mindset, (2) Legal Anatomy, (3) War Room Docs, (4) Integrated Family. ${cta}`;
     },
     
-    es: (score, profile, gaps = []) => {
-        const band = score < 40 ? '0-39' : score < 60 ? '40-59' : score < 75 ? '60-74' : score < 90 ? '75-89' : '90-100';
-        const rate = { '0-39': 93, '40-59': 68, '60-74': 48, '75-89': 28, '90-100': 9 }[band];
-        const gapsTxt = gaps.length ? gaps.slice(0, 3).join(', ') : 'sin gaps críticos explícitos';
+    es: (score, profile) => {
+        const abertura = typeof ABERTURAS[ABERTURA_VERSION].es === 'function'
+            ? ABERTURAS[ABERTURA_VERSION].es(profile, score, 'en evaluación')
+            : ABERTURAS[ABERTURA_VERSION].es;
         
-        const statusText = {
-            '0-39': 'preparación crítica necesaria',
-            '40-59': 'optimización requerida',
-            '60-74': 'buen potencial',
-            '75-89': 'perfil fuerte',
-            '90-100': 'perfil excelente'
-        }[band];
+        const cta = CTAS[CTA_VERSION].es;
         
-        return [
-            `Tu perfil de ${profile} con ${score}/100 indica ${statusText}. Gaps prioritarios: ${gapsTxt}. Con ellos sin corregir, el rechazo histórico ronda el ${rate}%.`,
-            
-            `Información ≠ estrategia. Muchos perfiles en este rango fallan por secuencia incorrecta, documentación incompleta y mala gestión de plazos — detalles quirúrgicos que no aparecen en checklists genéricos online.`,
-            
-            `La solución práctica es Power Oracle™: una hoja de ruta accionable de diagnóstico a ejecución. Recibes: (1) Alpha Mindset para usar el visado como base de expansión europea, (2) Legal Anatomy con checklist completo adaptado a tu perfil de ${profile}, (3) War Room Docs con plantillas listas que evitan errores críticos de formato, (4) Integrated Family para planificación familiar completa. Por €97 con garantía incondicional de 30 días, transformas tu diagnóstico en acción. Accede al Power Oracle™ ahora y recibe tu hoja de ruta personalizada en minutos.`
-        ].join('\n\n');
+        return `${abertura} La mayoría de los candidatos no percibe: tener los documentos correctos no es lo mismo que presentarlos como el gobierno español exige para conceder el visado.
+
+El consulado español evalúa la ESTRUCTURA de presentación: orden cronológico, formato técnico, y consistencia entre documentos. El gobierno no evalúa solo SI tienes los documentos, sino CÓMO cuentan tu historia profesional.
+
+El siguiente paso es adecuar tus documentos al método Power Oracle™ de obtener el visado. Este plan de acción transforma 'documentos correctos' en 'solicitud aprobada' a través de 4 módulos: (1) Alpha Mindset, (2) Legal Anatomy, (3) War Room Docs, (4) Integrated Family. ${cta}`;
     }
 };
 
@@ -353,17 +374,18 @@ const FALLBACKS = {
 
 async function generateAIAnalysis(scoreData, answers, language = 'pt') {
     console.log('═'.repeat(70));
-    console.log('🤖 [IA v9.0] generateAIAnalysis() CHAMADA');
+    console.log('🤖 [IA v10.1] generateAIAnalysis() CHAMADA');
     console.log(`   Score: ${scoreData?.score}/100`);
     console.log(`   Profile: ${scoreData?.profile}`);
     console.log(`   Language: ${language}`);
+    console.log(`   Abertura: ${ABERTURA_VERSION} | CTA: ${CTA_VERSION}`);
     console.log('═'.repeat(70));
     
     const lang = ['pt', 'en', 'es'].includes(language) ? language : 'pt';
     
     try {
         // Verificar cache
-        const cacheKey = generateCacheKey(scoreData, lang);
+        const cacheKey = generateCacheKey(scoreData, lang, ABERTURA_VERSION, CTA_VERSION);
         console.log(`📦 [Cache] Verificando... Key: ${cacheKey.substring(0, 40)}...`);
         
         const cached = analysisCache.get(cacheKey);
@@ -405,7 +427,7 @@ async function generateAIAnalysis(scoreData, answers, language = 'pt') {
                 temperature: 0.7,
                 topK: 40,
                 topP: 0.95,
-                maxOutputTokens: 1024,
+                maxOutputTokens: 512,
             }
         });
         
@@ -461,9 +483,8 @@ async function generateAIAnalysis(scoreData, answers, language = 'pt') {
         
         const score = Number(scoreData?.score || 0);
         const profile = sanitizeForPrompt(scoreData?.profile || 'Candidato');
-        const gaps = scoreData?.gaps || [];
         
-        const fallback = FALLBACKS[lang](score, profile, gaps);
+        const fallback = FALLBACKS[lang](score, profile);
         
         console.log(`📝 [Fallback] Análise offline gerada (${fallback.length} caracteres)`);
         console.log('═'.repeat(70));

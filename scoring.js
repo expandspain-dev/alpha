@@ -1,10 +1,23 @@
 /**
- * EXPANDSPAIN ALPHA™ - SCORING SYSTEM
+ * ═══════════════════════════════════════════════════════════════════════════
+ * EXPANDSPAIN ALPHA™ - SCORING SYSTEM v2.2.0
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 
  * Sistema de pontuação e análise de gaps
- * Versão multi-idioma compatível com server.js v2.1
+ * FIX: Normalização de estrutura de dados (bug 100/100)
+ * 
+ * @version 2.2.0
+ * @date 2025-10-10
+ * @author ExpandSpain Team
+ * @license Proprietary
  */
 
-// Traduções de perfis
+'use strict';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TRADUÇÕES - PERFIS
+// ═══════════════════════════════════════════════════════════════════════════
+
 const profileTranslations = {
     pt: {
         0: 'Fundador/Sócio',
@@ -26,7 +39,10 @@ const profileTranslations = {
     }
 };
 
-// Traduções de gaps
+// ═══════════════════════════════════════════════════════════════════════════
+// TRADUÇÕES - GAPS
+// ═══════════════════════════════════════════════════════════════════════════
+
 const gapTranslations = {
     pt: {
         'eu_citizen': 'Cidadania europeia (requisito eliminatório)',
@@ -111,7 +127,10 @@ const gapTranslations = {
     }
 };
 
-// Traduções de strengths (pontos fortes)
+// ═══════════════════════════════════════════════════════════════════════════
+// TRADUÇÕES - STRENGTHS
+// ═══════════════════════════════════════════════════════════════════════════
+
 const strengthTranslations = {
     pt: {
         'eligible_citizenship': 'Cidadania elegível',
@@ -154,7 +173,10 @@ const strengthTranslations = {
     }
 };
 
-// Traduções de status
+// ═══════════════════════════════════════════════════════════════════════════
+// TRADUÇÕES - STATUS
+// ═══════════════════════════════════════════════════════════════════════════
+
 const statusTranslations = {
     pt: {
         'not_eligible': 'NÃO ELEGÍVEL',
@@ -179,66 +201,192 @@ const statusTranslations = {
     }
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// REGRAS DE PENALIDADES
+// ═══════════════════════════════════════════════════════════════════════════
+
+const PENALTY_RULES = {
+    'q_V2': { 1: { penalty: -1000, gapKey: 'eu_citizen' } },
+    'q_V3': { 1: { penalty: -1000, gapKey: 'minor' } },
+    'q_V11': { 1: { penalty: -1000, gapKey: 'spain_company' } },
+    'q_V12': { 1: { penalty: -1000, gapKey: 'new_company' } },
+    'q_V20': { 2: { penalty: -1000, gapKey: 'criminal_record_issues' } },
+    'q_V4': { 1: { penalty: -25, gapKey: 'passport_validity' } },
+    'q_V6': { 1: { penalty: -30, gapKey: 'irregular_spain' } },
+    'q_V7_A': { 1: { penalty: -20, gapKey: 'no_remote_clause_partner' } },
+    'q_V7A_2': { 1: { penalty: -15, gapKey: 'contract_under_3_months' } },
+    'q_V8_A': { 1: { penalty: -30, gapKey: 'insufficient_prolabore' } },
+    'q_V9_A': { 
+        1: { penalty: -25, gapKey: 'no_bank_statements_prolabore' }, 
+        2: { penalty: -30, gapKey: 'insufficient_bank_statements' } 
+    },
+    'q_V7_B': { 1: { penalty: -20, gapKey: 'no_formal_contracts' } },
+    'q_V8_B': { 1: { penalty: -30, gapKey: 'insufficient_income' } },
+    'q_V9_B': { 1: { penalty: -25, gapKey: 'no_income_proof' } },
+    'q_V7_C': { 1: { penalty: -20, gapKey: 'no_remote_clause_employee' } },
+    'q_V8_C': { 1: { penalty: -30, gapKey: 'insufficient_salary' } },
+    'q_V9_C': { 1: { penalty: -25, gapKey: 'no_payslips' } },
+    'q_V13': { 1: { penalty: -25, gapKey: 'no_authorization_letter' } },
+    'q_V14': { 1: { penalty: -15, gapKey: 'no_qualification_proof' } },
+    'q_V15': { 1: { penalty: -10, gapKey: 'no_remote_experience' } },
+    'q_V16': { 1: { penalty: -25, gapKey: 'insufficient_financial_resources' } },
+    'q_V18': { 1: { penalty: -20, gapKey: 'insufficient_family_resources' } },
+    'q_V19': { 1: { penalty: -15, gapKey: 'inadequate_health_insurance' } }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UTILITY: NORMALIZAR ESTRUTURA DE ANSWERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Normaliza diferentes formatos de answers para o formato esperado
+ * 
+ * Entrada aceita:
+ * 1. { "q_V1": 0, "q_V2": 1 } (direto)
+ * 2. { "0": { questionId: "q_V1", optionIndex: 0 } } (com objeto)
+ * 3. { "0": { questionId: "q_V1", responseData: { optionIndex: 0 } } } (aninhado)
+ * 
+ * Saída padronizada:
+ * { "q_V1": 0, "q_V2": 1 }
+ */
+function normalizeAnswers(rawAnswers) {
+    console.log('🔧 [Scoring] Normalizando answers...');
+    console.log('   Tipo:', typeof rawAnswers);
+    console.log('   Keys:', Object.keys(rawAnswers || {}).length);
+    
+    if (!rawAnswers || typeof rawAnswers !== 'object') {
+        console.error('❌ [Scoring] rawAnswers inválido:', rawAnswers);
+        return {};
+    }
+    
+    const normalized = {};
+    
+    for (const key in rawAnswers) {
+        const value = rawAnswers[key];
+        
+        // Caso 1: Valor já é número direto (formato esperado)
+        // { "q_V1": 0 }
+        if (typeof value === 'number') {
+            normalized[key] = value;
+            continue;
+        }
+        
+        // Caso 2: Valor é objeto com questionId e optionIndex
+        // { "0": { questionId: "q_V1", optionIndex: 0 } }
+        if (value && typeof value === 'object') {
+            if (value.questionId && value.optionIndex !== undefined) {
+                normalized[value.questionId] = value.optionIndex;
+                continue;
+            }
+            
+            // Caso 3: Valor aninhado com responseData
+            // { "0": { questionId: "q_V1", responseData: { optionIndex: 0 } } }
+            if (value.questionId && value.responseData && value.responseData.optionIndex !== undefined) {
+                normalized[value.questionId] = value.responseData.optionIndex;
+                continue;
+            }
+            
+            // Caso 4: Objeto com optionIndex direto mas sem questionId
+            // { "q_V1": { optionIndex: 0 } }
+            if (value.optionIndex !== undefined) {
+                normalized[key] = value.optionIndex;
+                continue;
+            }
+        }
+        
+        console.warn(`⚠️  [Scoring] Formato desconhecido para key "${key}":`, value);
+    }
+    
+    console.log(`✅ [Scoring] Normalizado: ${Object.keys(normalized).length} respostas`);
+    console.log('   Sample:', JSON.stringify(Object.entries(normalized).slice(0, 3)));
+    
+    return normalized;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FUNÇÃO PRINCIPAL: CALCULAR SCORE
+// ═══════════════════════════════════════════════════════════════════════════
+
 /**
  * Calcula score e analisa gaps/strengths
- * @param {object} answers - Respostas do usuário {questionId: optionIndex}
+ * @param {object} rawAnswers - Respostas brutas (qualquer formato)
  * @param {string} language - Idioma (pt, en, es)
  * @returns {object} - {score, status, statusColor, gaps, strengths, profile}
  */
-function calculateScore(answers, language = 'pt') {
+function calculateScore(rawAnswers, language = 'pt') {
+    console.log('═'.repeat(70));
+    console.log('🎯 [Scoring v2.2.0] calculateScore() INICIADO');
+    console.log(`   Language: ${language}`);
+    console.log('═'.repeat(70));
+    
+    // Normalizar estrutura de dados
+    const answers = normalizeAnswers(rawAnswers);
+    
+    if (Object.keys(answers).length === 0) {
+        console.error('❌ [Scoring] Nenhuma resposta normalizada!');
+        return {
+            score: 0,
+            status: 'NÃO ELEGÍVEL',
+            statusColor: '#cc0000',
+            gaps: ['Erro ao processar respostas'],
+            strengths: [],
+            profile: 'Não identificado'
+        };
+    }
+    
     let score = 100;
     const gapKeys = [];
     const strengthKeys = [];
 
     // Determinar perfil
     const profileMap = profileTranslations[language] || profileTranslations['pt'];
-    const profile = profileMap[answers['q_V1']] || profileMap['default'];
+    const profileValue = answers['q_V1'];
+    const profile = profileMap[profileValue] || profileMap['default'];
     
-    // Regras de penalidade (usando chaves para tradução)
-    const rules = {
-        'q_V2': { 1: { penalty: -1000, gapKey: 'eu_citizen' } },
-        'q_V3': { 1: { penalty: -1000, gapKey: 'minor' } },
-        'q_V11': { 1: { penalty: -1000, gapKey: 'spain_company' } },
-        'q_V12': { 1: { penalty: -1000, gapKey: 'new_company' } },
-        'q_V20': { 2: { penalty: -1000, gapKey: 'criminal_record_issues' } },
-        'q_V4': { 1: { penalty: -25, gapKey: 'passport_validity' } },
-        'q_V6': { 1: { penalty: -30, gapKey: 'irregular_spain' } },
-        'q_V7_A': { 1: { penalty: -20, gapKey: 'no_remote_clause_partner' } },
-        'q_V7A_2': { 1: { penalty: -15, gapKey: 'contract_under_3_months' } },
-        'q_V8_A': { 1: { penalty: -30, gapKey: 'insufficient_prolabore' } },
-        'q_V9_A': { 
-            1: { penalty: -25, gapKey: 'no_bank_statements_prolabore' }, 
-            2: { penalty: -30, gapKey: 'insufficient_bank_statements' } 
-        },
-        'q_V7_B': { 1: { penalty: -20, gapKey: 'no_formal_contracts' } },
-        'q_V8_B': { 1: { penalty: -30, gapKey: 'insufficient_income' } },
-        'q_V9_B': { 1: { penalty: -25, gapKey: 'no_income_proof' } },
-        'q_V7_C': { 1: { penalty: -20, gapKey: 'no_remote_clause_employee' } },
-        'q_V8_C': { 1: { penalty: -30, gapKey: 'insufficient_salary' } },
-        'q_V9_C': { 1: { penalty: -25, gapKey: 'no_payslips' } },
-        'q_V13': { 1: { penalty: -25, gapKey: 'no_authorization_letter' } },
-        'q_V14': { 1: { penalty: -15, gapKey: 'no_qualification_proof' } },
-        'q_V15': { 1: { penalty: -10, gapKey: 'no_remote_experience' } },
-        'q_V16': { 1: { penalty: -25, gapKey: 'insufficient_financial_resources' } },
-        'q_V18': { 1: { penalty: -20, gapKey: 'insufficient_family_resources' } },
-        'q_V19': { 1: { penalty: -15, gapKey: 'inadequate_health_insurance' } },
-        'q_V20': { 1: { penalty: -10, gapKey: 'pending_criminal_certificate' } },
-    };
-
-    // Aplicar regras e coletar gaps
-    for (const qId in answers) {
-        if (rules[qId] && rules[qId][answers[qId]]) {
-            const rule = rules[qId][answers[qId]];
-            score += rule.penalty;
-            if (rule.gapKey) {
-                gapKeys.push(rule.gapKey);
+    console.log(`\n👤 [Perfil] ${profile} (q_V1 = ${profileValue})`);
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // APLICAR REGRAS DE PENALIDADE
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    console.log(`\n⚖️  [Penalties] Avaliando ${Object.keys(PENALTY_RULES).length} regras...`);
+    let penaltiesApplied = 0;
+    
+    for (const qId in PENALTY_RULES) {
+        const answerValue = answers[qId];
+        
+        if (answerValue === undefined) {
+            continue; // Pergunta não respondida
+        }
+        
+        const ruleForAnswer = PENALTY_RULES[qId][answerValue];
+        
+        if (ruleForAnswer) {
+            score += ruleForAnswer.penalty;
+            penaltiesApplied++;
+            
+            if (ruleForAnswer.gapKey) {
+                gapKeys.push(ruleForAnswer.gapKey);
             }
+            
+            console.log(`   ⚠️  ${qId} = ${answerValue} → ${ruleForAnswer.penalty} pontos (Gap: ${ruleForAnswer.gapKey || 'N/A'})`);
         }
     }
+    
+    console.log(`\n📊 [Result] ${penaltiesApplied} penalidade(s) aplicada(s)`);
+    console.log(`   Score após penalidades: ${score}`);
 
-    // Coletar strengths (pontos fortes)
+    // ═══════════════════════════════════════════════════════════════════════
+    // COLETAR STRENGTHS (PONTOS FORTES)
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    console.log(`\n💪 [Strengths] Avaliando pontos fortes...`);
+    
     const addStrength = (condition, key) => { 
-        if (condition) strengthKeys.push(key); 
+        if (condition) {
+            strengthKeys.push(key);
+            console.log(`   ✅ ${key}`);
+        }
     };
     
     addStrength(answers['q_V2'] === 0, 'eligible_citizenship');
@@ -261,10 +409,14 @@ function calculateScore(answers, language = 'pt') {
         addStrength(answers['q_V8_C'] === 0, 'compatible_income_employee');
     }
     
-    // Limitar score entre 0 e 100
+    console.log(`   Total: ${strengthKeys.length} ponto(s) forte(s)`);
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // LIMITAR SCORE E DETERMINAR STATUS
+    // ═══════════════════════════════════════════════════════════════════════
+    
     score = Math.max(0, Math.min(100, score));
-
-    // Determinar status e cor
+    
     let statusKey, statusColor;
     if (score < 1) { 
         statusKey = 'not_eligible';
@@ -287,7 +439,10 @@ function calculateScore(answers, language = 'pt') {
         statusColor = '#00ff88';
     }
 
-    // Traduzir gaps, strengths e status
+    // ═══════════════════════════════════════════════════════════════════════
+    // TRADUZIR GAPS, STRENGTHS E STATUS
+    // ═══════════════════════════════════════════════════════════════════════
+    
     const gapTranslationMap = gapTranslations[language] || gapTranslations['pt'];
     const strengthTranslationMap = strengthTranslations[language] || strengthTranslations['pt'];
     const statusTranslationMap = statusTranslations[language] || statusTranslations['pt'];
@@ -296,7 +451,7 @@ function calculateScore(answers, language = 'pt') {
     const strengths = strengthKeys.map(key => strengthTranslationMap[key] || key);
     const status = statusTranslationMap[statusKey] || statusKey;
 
-    return { 
+    const result = { 
         score: Math.round(score), 
         status, 
         statusColor, 
@@ -304,6 +459,23 @@ function calculateScore(answers, language = 'pt') {
         strengths, 
         profile 
     };
+    
+    console.log('\n═'.repeat(70));
+    console.log('✅ [Scoring] RESULTADO FINAL:');
+    console.log(`   Score: ${result.score}/100`);
+    console.log(`   Status: ${result.status}`);
+    console.log(`   Profile: ${result.profile}`);
+    console.log(`   Gaps: ${result.gaps.length}`);
+    console.log(`   Strengths: ${result.strengths.length}`);
+    console.log('═'.repeat(70));
+
+    return result;
 }
 
-module.exports = { calculateScore };
+// ═══════════════════════════════════════════════════════════════════════════
+// EXPORTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+module.exports = { 
+    calculateScore 
+};

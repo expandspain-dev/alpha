@@ -1,14 +1,14 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * EXPANDSPAIN ALPHA™ - AI SERVICE v10.1 FINAL (A/B TESTING READY)
+ * EXPANDSPAIN ALPHA™ - AI SERVICE v12.2 FINAL
  * ═══════════════════════════════════════════════════════════════════════════
  * 
  * MODELO: gemini-2.0-flash-exp
- * Copy: Conciso (120-220 palavras), honesto, direto
- * Versões: Abertura A/B + CTA A/B/C/D/E testáveis
+ * CORES: Roxo geral + Azul para Power Oracle™
+ * PROMOÇÃO: €97
  * 
  * @author ExpandSpain Team
- * @version 10.1
+ * @version 12.2
  * @license Proprietary
  */
 
@@ -30,57 +30,8 @@ if (!GEMINI_API_KEY) {
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-console.log('✅ [aiService v10.1] Gemini AI inicializado (A/B Testing)');
+console.log('✅ [aiService v12.2] Gemini AI inicializado (Power Oracle Azul)');
 console.log(`   Modelo: ${MODEL_ID}`);
-
-// ═══════════════════════════════════════════════════════════════════════════
-// CONFIGURAÇÃO DE TESTES A/B
-// ═══════════════════════════════════════════════════════════════════════════
-
-// Escolha qual versão usar (ou randomize para teste A/B)
-const ABERTURA_VERSION = 'A'; // 'A' ou 'B'
-const CTA_VERSION = 'A'; // 'A', 'B', 'C', 'D', 'E'
-
-const ABERTURAS = {
-    A: {
-        pt: "Você já tem os documentos. Falta a sequência vencedora que o governo espanhol aprova.",
-        en: "You already have the documents. What's missing is the winning sequence that the Spanish government approves.",
-        es: "Ya tienes los documentos. Falta la secuencia ganadora que el gobierno español aprueba."
-    },
-    B: {
-        pt: (profile, score, status) => `Agora você sabe a que distância está de obter o visto. Seu perfil de ${profile} com ${score}/100 indica ${status}.`,
-        en: (profile, score, status) => `Now you know your distance to obtaining the visa. Your ${profile} profile with ${score}/100 indicates ${status}.`,
-        es: (profile, score, status) => `Ahora sabes a qué distancia estás de obtener el visado. Tu perfil de ${profile} con ${score}/100 indica ${status}.`
-    }
-};
-
-const CTAS = {
-    A: {
-        pt: "Entre agora, pegue o Power Oracle™, e submeta seu pedido vencedor.",
-        en: "Enter now, get the Power Oracle™, and submit your winning application.",
-        es: "Entra ahora, consigue el Power Oracle™, y presenta tu solicitud ganadora."
-    },
-    B: {
-        pt: "Clique, gere o roteiro personalizado em 3 minutos, e siga o caminho eficaz.",
-        en: "Click, generate your personalized roadmap in 3 minutes, and follow the effective path.",
-        es: "Haz clic, genera tu hoja de ruta personalizada en 3 minutos, y sigue el camino eficaz."
-    },
-    C: {
-        pt: "Acesse o Power Oracle™ agora e transforme documentos em aprovação em minutos.",
-        en: "Access the Power Oracle™ now and transform documents into approval in minutes.",
-        es: "Accede al Power Oracle™ ahora y transforma documentos en aprobación en minutos."
-    },
-    D: {
-        pt: "Comece agora: 4 módulos, roteiro claro, submissão certa.",
-        en: "Start now: 4 modules, clear roadmap, right submission.",
-        es: "Comienza ahora: 4 módulos, hoja de ruta clara, presentación correcta."
-    },
-    E: {
-        pt: "Clique aqui, monte seu dossiê vencedor em 3 minutos, e aplique com confiança.",
-        en: "Click here, build your winning dossier in 3 minutes, and apply with confidence.",
-        es: "Haz clic aquí, monta tu dosier ganador en 3 minutos, y presenta con confianza."
-    }
-};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CACHE EM MEMÓRIA
@@ -107,12 +58,11 @@ setInterval(() => {
 // UTILITY FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
-function generateCacheKey(scoreData, language, aberturaVer, ctaVer) {
+function generateCacheKey(scoreData, language) {
     const scoreRange = Math.floor((scoreData?.score || 0) / 10) * 10;
-    const gapsKey = (scoreData?.gaps || []).map(String).sort().join('|');
-    const statusKey = String(scoreData?.status || '').toLowerCase().replace(/\s+/g, '-');
+    const strengthsKey = (scoreData?.strengths || []).map(String).sort().join('|');
     const profileKey = String(scoreData?.profile || '').toLowerCase().replace(/\s+/g, '-');
-    return `${language}:${scoreRange}:${statusKey}:${profileKey}:${gapsKey}:${aberturaVer}:${ctaVer}`;
+    return `${language}:${scoreRange}:${profileKey}:${strengthsKey}`;
 }
 
 function sanitizeForPrompt(text) {
@@ -124,269 +74,533 @@ function sanitizeForPrompt(text) {
         .trim();
 }
 
-function getScoreBand(score) {
-    if (score >= 90) return '90-100';
-    if (score >= 75) return '75-89';
-    if (score >= 60) return '60-74';
-    if (score >= 40) return '40-59';
-    return '0-39';
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
-// PROMPTS v10.1 - CONCISO (120-220 PALAVRAS), HONESTO, DIRETO
+// TEXTOS FIXOS v12.2 - POWER ORACLE EM AZUL
 // ═══════════════════════════════════════════════════════════════════════════
 
-const PROMPT_TEMPLATES = {
-    pt: ({ profile, score, status, gaps, strengths }) => {
-        const band = getScoreBand(score);
+const FIXED_TEXTS = {
+    // TÍTULO DA ANÁLISE
+    analysisTitle: {
+        pt: `<div class="ai-analysis-header">
+            <span class="ai-badge">ANÁLISE DE IA</span>
+            <h2 class="analysis-title">Seu Roadmap Estratégico Para Aprovação</h2>
+        </div>`,
         
-        const abertura = typeof ABERTURAS[ABERTURA_VERSION].pt === 'function'
-            ? ABERTURAS[ABERTURA_VERSION].pt(profile, score, status)
-            : ABERTURAS[ABERTURA_VERSION].pt;
+        en: `<div class="ai-analysis-header">
+            <span class="ai-badge">AI ANALYSIS</span>
+            <h2 class="analysis-title">Your Strategic Roadmap to Approval</h2>
+        </div>`,
         
-        const cta = CTAS[CTA_VERSION].pt;
+        es: `<div class="ai-analysis-header">
+            <span class="ai-badge">ANÁLISIS DE IA</span>
+            <h2 class="analysis-title">Tu Hoja de Ruta Estratégica Para la Aprobación</h2>
+        </div>`
+    },
+    
+    // PARÁGRAFO 1: Distância e Gap Crítico
+    paragraph1: {
+        pt: `<div class="analysis-section section-diagnosis">
+            <h3 class="section-label">📊 Diagnóstico</h3>
+            <p><strong>Agora você sabe a que distância está de obter o visto.</strong> O próximo passo é estabelecer a estratégia que o governo espanhol aprova.</p>
+            
+            <p>O teste mostrou <strong>quais documentos</strong> são necessários para preencher os requisitos. Mas conhecer os documentos não é suficiente, pois a aprovação também depende da <strong>forma como são apresentados</strong>.</p>
+            
+            <div class="example-box">
+                <span class="example-label">⚠️ Exemplo crítico:</span>
+                <p>Não basta possuir os extratos dos últimos três meses de recebimentos. É preciso apresentar um <strong>relatório formatado</strong> com:</p>
+                <ul>
+                    <li>Indicação das linhas onde os depósitos foram feitos</li>
+                    <li>Identificação clara do depositante</li>
+                    <li>Conversão do valor depositado em euros</li>
+                    <li>Outras especificações técnicas exigidas</li>
+                </ul>
+                <p><strong>E isso vale para a maioria dos documentos</strong>, incluindo normas específicas de tradução e legalização.</p>
+            </div>
+        </div>`,
         
-        const problems = {
-            '90-100': `O consulado espanhol avalia a ESTRUTURA da apresentação: ordem cronológica dos contratos, formatação de extratos bancários, e consistência entre documentos. O governo não analisa apenas SE você tem os documentos, mas COMO eles contam sua história profissional de forma convincente.`,
-            '75-89': `O governo espanhol não analisa apenas SE você tem os documentos, mas COMO eles contam sua história profissional. A sequência de apresentação, o formato dos anexos, e a coerência entre declarações são critérios decisivos que não aparecem em checklists genéricos.`,
-            '60-74': `O consulado avalia se sua documentação forma uma narrativa clara de estabilidade. Isso exige saber ONDE cada documento entra no dossiê, QUANDO apresentá-lo, e COMO formatá-lo segundo padrões consulares técnicos.`,
-            '40-59': `Você sabe QUAIS documentos precisa, mas o próximo desafio é saber COMO estruturá-los. O governo espanhol tem critérios técnicos rigorosos: formatação exata de PDFs, ordem lógica de anexos, tipo correto de tradução.`,
-            '0-39': `Reunir documentos é fase 1. Estruturá-los segundo os padrões do consulado é fase 2. Sem um roadmap claro, candidatos gastam meses tentando descobrir qual documento vem primeiro, como formatar cada PDF, quando usar tradução juramentada.`
-        };
+        en: `<div class="analysis-section section-diagnosis">
+            <h3 class="section-label">📊 Diagnosis</h3>
+            <p><strong>Now you know your distance to obtaining the visa.</strong> The next step is to establish the strategy that the Spanish government approves.</p>
+            
+            <p>The test showed <strong>which documents</strong> are necessary to meet the requirements. But knowing the documents is not enough, as approval also depends on <strong>how they are presented</strong>.</p>
+            
+            <div class="example-box">
+                <span class="example-label">⚠️ Critical example:</span>
+                <p>It's not enough to have bank statements from the last three months. You must present a <strong>formatted report</strong> with:</p>
+                <ul>
+                    <li>Indication of lines where deposits were made</li>
+                    <li>Clear identification of the depositor</li>
+                    <li>Conversion of deposited amount to euros</li>
+                    <li>Other required technical specifications</li>
+                </ul>
+                <p><strong>And this applies to most documents</strong>, including specific translation and legalization standards.</p>
+            </div>
+        </div>`,
+        
+        es: `<div class="analysis-section section-diagnosis">
+            <h3 class="section-label">📊 Diagnóstico</h3>
+            <p><strong>Ahora sabes a qué distancia estás de obtener el visado.</strong> El siguiente paso es establecer la estrategia que el gobierno español aprueba.</p>
+            
+            <p>El test mostró <strong>qué documentos</strong> son necesarios para cumplir los requisitos. Pero conocer los documentos no es suficiente, ya que la aprobación también depende de <strong>cómo se presentan</strong>.</p>
+            
+            <div class="example-box">
+                <span class="example-label">⚠️ Ejemplo crítico:</span>
+                <p>No basta con tener los extractos de los últimos tres meses de ingresos. Es necesario presentar un <strong>informe formateado</strong> con:</p>
+                <ul>
+                    <li>Indicación de las líneas donde se realizaron los depósitos</li>
+                    <li>Identificación clara del depositante</li>
+                    <li>Conversión del valor depositado a euros</li>
+                    <li>Otras especificaciones técnicas exigidas</li>
+                </ul>
+                <p><strong>Y esto aplica para la mayoría de los documentos</strong>, incluyendo normas específicas de traducción y legalización.</p>
+            </div>
+        </div>`
+    },
+    
+    // PARÁGRAFO 2: Método Power Oracle™ (AZUL)
+    paragraph2: {
+        pt: `<div class="analysis-section section-solution">
+            <h3 class="section-label section-label-oracle">⚡ A Solução</h3>
+            <p>Para garantir o êxito da sua aplicação, desenvolvemos o método <strong class="highlight-oracle">Power Oracle™</strong>.</p>
+            
+            <p>Ele é um <strong>plano de ação</strong> que transforma o resultado do teste em uma <strong>"aplicação aprovada"</strong> através de 4 módulos essenciais:</p>
+            
+            <div class="modules-list">
+                <div class="module-item">
+                    <span class="module-number">01</span>
+                    <div class="module-content">
+                        <strong>Alpha Mindset</strong> – Usando o visto para sua expansão. Os procedimentos desde o primeiro momento em que você começa a se informar até a obtenção do visto.
+                    </div>
+                </div>
+                
+                <div class="module-item">
+                    <span class="module-number">02</span>
+                    <div class="module-content">
+                        <strong>Legal Anatomy</strong> – Checklist técnico sob medida para o seu perfil, com prazos e a ordem exata a seguir para obter e apresentar todos os documentos exigidos.
+                    </div>
+                </div>
+                
+                <div class="module-item">
+                    <span class="module-number">03</span>
+                    <div class="module-content">
+                        <strong>War Room Docs</strong> – Templates pré-formatados que seguem os padrões, já foram exaustivamente testados e aprovados pelos consulados.
+                    </div>
+                </div>
+                
+                <div class="module-item">
+                    <span class="module-number">04</span>
+                    <div class="module-content">
+                        <strong>Integrated Family</strong> – Roadmap para integração da família, incluindo cônjuge, filhos e pais.
+                    </div>
+                </div>
+            </div>
+        </div>`,
+        
+        en: `<div class="analysis-section section-solution">
+            <h3 class="section-label section-label-oracle">⚡ The Solution</h3>
+            <p>To ensure the success of your application, we developed the <strong class="highlight-oracle">Power Oracle™</strong> method.</p>
+            
+            <p>It is an <strong>action plan</strong> that transforms the test result into an <strong>"approved application"</strong> through 4 essential modules:</p>
+            
+            <div class="modules-list">
+                <div class="module-item">
+                    <span class="module-number">01</span>
+                    <div class="module-content">
+                        <strong>Alpha Mindset</strong> – Using the visa for your expansion. The procedures from the first moment you start gathering information until obtaining the visa.
+                    </div>
+                </div>
+                
+                <div class="module-item">
+                    <span class="module-number">02</span>
+                    <div class="module-content">
+                        <strong>Legal Anatomy</strong> – Technical checklist tailored to your profile, with deadlines and exact order to follow for obtaining and presenting all required documents.
+                    </div>
+                </div>
+                
+                <div class="module-item">
+                    <span class="module-number">03</span>
+                    <div class="module-content">
+                        <strong>War Room Docs</strong> – Pre-formatted templates that follow standards, already exhaustively tested and approved by consulates.
+                    </div>
+                </div>
+                
+                <div class="module-item">
+                    <span class="module-number">04</span>
+                    <div class="module-content">
+                        <strong>Integrated Family</strong> – Roadmap for family integration, including spouse, children, and parents.
+                    </div>
+                </div>
+            </div>
+        </div>`,
+        
+        es: `<div class="analysis-section section-solution">
+            <h3 class="section-label section-label-oracle">⚡ La Solución</h3>
+            <p>Para garantizar el éxito de tu solicitud, desarrollamos el método <strong class="highlight-oracle">Power Oracle™</strong>.</p>
+            
+            <p>Es un <strong>plan de acción</strong> que transforma el resultado del test en una <strong>"solicitud aprobada"</strong> a través de 4 módulos esenciales:</p>
+            
+            <div class="modules-list">
+                <div class="module-item">
+                    <span class="module-number">01</span>
+                    <div class="module-content">
+                        <strong>Alpha Mindset</strong> – Usando el visado para tu expansión. Los procedimientos desde el primer momento en que comienzas a informarte hasta la obtención del visado.
+                    </div>
+                </div>
+                
+                <div class="module-item">
+                    <span class="module-number">02</span>
+                    <div class="module-content">
+                        <strong>Legal Anatomy</strong> – Checklist técnico a medida para tu perfil, con plazos y el orden exacto a seguir para obtener y presentar todos los documentos exigidos.
+                    </div>
+                </div>
+                
+                <div class="module-item">
+                    <span class="module-number">03</span>
+                    <div class="module-content">
+                        <strong>War Room Docs</strong> – Plantillas pre-formateadas que siguen los estándares, ya exhaustivamente probadas y aprobadas por los consulados.
+                    </div>
+                </div>
+                
+                <div class="module-item">
+                    <span class="module-number">04</span>
+                    <div class="module-content">
+                        <strong>Integrated Family</strong> – Hoja de ruta para integración familiar, incluyendo cónyuge, hijos y padres.
+                    </div>
+                </div>
+            </div>
+        </div>`
+    },
+    
+    // PARÁGRAFO 4: Oferta Final (AZUL para Power Oracle)
+    paragraph4: {
+        pt: `<div class="analysis-section section-offer">
+            <h3 class="section-label section-label-oracle">💎 Investimento</h3>
+            
+            <div class="price-highlight">
+                <span class="price-label">Power Oracle™</span>
+                <div class="promo-pricing">
+                    <span class="price-old">€200</span>
+                    <span class="price-arrow">→</span>
+                    <span class="price-value">€97</span>
+                </div>
+                <span class="price-note">Oferta por tempo limitado • Acesso vitalício</span>
+            </div>
+            
+            <div class="includes-box">
+                <h4>✓ O que está incluído:</h4>
+                <ul>
+                    <li><strong>Acesso imediato</strong> aos 4 módulos completos (Alpha Mindset, Legal Anatomy, War Room Docs, Integrated Family)</li>
+                    <li><strong>Templates e checklists personalizados</strong> para seu perfil específico</li>
+                    <li><strong>Suporte técnico</strong> para dúvidas sobre documentação</li>
+                    <li><strong>Atualizações vitalícias</strong> conforme mudanças na legislação espanhola</li>
+                </ul>
+            </div>
+            
+            <div class="value-proposition">
+                <p class="final-statement">Este investimento pode ser <strong>a diferença entre aprovação e rejeição</strong> do seu visto — ou entre 60 dias e 18 meses de espera.</p>
+            </div>
+        </div>`,
+        
+        en: `<div class="analysis-section section-offer">
+            <h3 class="section-label section-label-oracle">💎 Investment</h3>
+            
+            <div class="price-highlight">
+                <span class="price-label">Power Oracle™</span>
+                <div class="promo-pricing">
+                    <span class="price-old">€200</span>
+                    <span class="price-arrow">→</span>
+                    <span class="price-value">€97</span>
+                </div>
+                <span class="price-note">Limited time offer • Lifetime access</span>
+            </div>
+            
+            <div class="includes-box">
+                <h4>✓ What's included:</h4>
+                <ul>
+                    <li><strong>Immediate access</strong> to all 4 complete modules (Alpha Mindset, Legal Anatomy, War Room Docs, Integrated Family)</li>
+                    <li><strong>Templates and checklists customized</strong> to your specific profile</li>
+                    <li><strong>Technical support</strong> for documentation questions</li>
+                    <li><strong>Lifetime updates</strong> according to changes in Spanish legislation</li>
+                </ul>
+            </div>
+            
+            <div class="value-proposition">
+                <p class="final-statement">This investment can be <strong>the difference between approval and rejection</strong> of your visa — or between 60 days and 18 months of waiting.</p>
+            </div>
+        </div>`,
+        
+        es: `<div class="analysis-section section-offer">
+            <h3 class="section-label section-label-oracle">💎 Inversión</h3>
+            
+            <div class="price-highlight">
+                <span class="price-label">Power Oracle™</span>
+                <div class="promo-pricing">
+                    <span class="price-old">€200</span>
+                    <span class="price-arrow">→</span>
+                    <span class="price-value">€97</span>
+                </div>
+                <span class="price-note">Oferta por tiempo limitado • Acceso de por vida</span>
+            </div>
+            
+            <div class="includes-box">
+                <h4>✓ Lo que incluye:</h4>
+                <ul>
+                    <li><strong>Acceso inmediato</strong> a los 4 módulos completos (Alpha Mindset, Legal Anatomy, War Room Docs, Integrated Family)</li>
+                    <li><strong>Plantillas y checklists personalizados</strong> para tu perfil específico</li>
+                    <li><strong>Soporte técnico</strong> para dudas sobre documentación</li>
+                    <li><strong>Actualizaciones de por vida</strong> según cambios en la legislación española</li>
+                </ul>
+            </div>
+            
+            <div class="value-proposition">
+                <p class="final-statement">Esta inversión puede ser <strong>la diferencia entre aprobación y rechazo</strong> de tu visado — o entre 60 días y 18 meses de espera.</p>
+            </div>
+        </div>`
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROMPTS v12.2 - BLINDADOS
+// ═══════════════════════════════════════════════════════════════════════════
+
+const STRENGTHS_PROMPTS = {
+    pt: ({ profile, score, strengths }) => {
+        const strengthsList = Array.isArray(strengths) && strengths.length > 0
+            ? strengths.map(sanitizeForPrompt).join(', ')
+            : 'perfil em desenvolvimento';
         
         return `
-Você é a Alpha AI, consultora estratégica de vistos da ExpandSpain. Escreva em Português do Brasil.
+Você é a Alpha AI, consultora estratégica da ExpandSpain. Escreva em Português do Brasil.
+
+CONTEXTO IMPORTANTE:
+Este texto será inserido entre outros parágrafos FIXOS que você NÃO DEVE mencionar, substituir ou referenciar. 
+Você está escrevendo APENAS o parágrafo 3, que analisa os pontos fortes do candidato.
 
 DADOS DO CANDIDATO:
 - Perfil: ${profile}
-- Pontuação: ${score}/100 (Faixa: ${band})
-- Status: ${status}
+- Pontuação: ${score}/100
+- Pontos Fortes Identificados: ${strengthsList}
 
-OBJETIVO: Gerar uma análise CONCISA de 3 parágrafos (120-220 palavras) que VENDA o Power Oracle™ (€97). Tom direto e honesto.
+TAREFA: Escreva UM ÚNICO PARÁGRAFO HTML (50-80 palavras) analisando os pontos fortes deste candidato de forma estratégica e persuasiva.
 
 REGRAS ABSOLUTAS:
-- Extensão: 120-220 palavras. ZERO emojis.
-- Tom: direto, estratégico, honesto (sem números inventados).
-- Falar diretamente com "você".
-- Mencionar "Power Oracle™" apenas no 3º parágrafo.
+✓ Extensão: 50-80 palavras
+✓ Formato: HTML simples com <strong> para destaques
+✓ Tom: estratégico, confiante, motivador
+✓ Usar "você" ou "seu/sua"
+✓ Começar com: "Seu perfil apresenta..." ou "Seus pontos fortes incluem..."
+✓ Conectar pontos fortes com requisitos consulares
+✓ NÃO mencionar "Power Oracle™" ou "módulos"
+✓ NÃO mencionar "parágrafo anterior" ou "como vimos"
+✓ NÃO usar emojis
+✓ Ser específico sobre OS PONTOS FORTES fornecidos
 
-ESTRUTURA OBRIGATÓRIA:
+ESTRUTURA HTML OBRIGATÓRIA:
+<div class="analysis-section section-strengths">
+    <h3 class="section-label">✅ Seus Pontos Fortes</h3>
+    <p>[SEU TEXTO AQUI com <strong> nos destaques principais]</p>
+    <p class="next-step">[Frase de transição para ação - 10-15 palavras]</p>
+</div>
 
-PARÁGRAFO 1 (2-3 linhas) — Abertura + Gap:
-"${abertura} A maioria dos candidatos não percebe: ter os documentos corretos não é o mesmo que apresentá-los como o governo espanhol exige para conceder o visto."
+EXEMPLO DE OUTPUT ESPERADO:
+<div class="analysis-section section-strengths">
+    <h3 class="section-label">✅ Seus Pontos Fortes</h3>
+    <p>Seu perfil apresenta <strong>renda estável acima do mínimo exigido</strong>, documentação profissional consistente, e <strong>histórico comprovado de trabalho remoto</strong>. Esses elementos formam uma base sólida que, estruturados segundo os padrões técnicos do consulado espanhol, atendem aos critérios decisivos de aprovação.</p>
+    <p class="next-step">O próximo passo é transformar esses pontos fortes em uma aplicação vencedora.</p>
+</div>
 
-PARÁGRAFO 2 (3-4 linhas) — Problema Invisível:
-"${problems[band]}"
-
-PARÁGRAFO 3 (4-5 linhas) — Power Oracle™ = Solução:
-"O próximo passo é adequar seus documentos ao método Power Oracle™ de obter o visto. Este plano de ação transforma 'documentos corretos' em 'aplicação aprovada' através de 4 módulos: (1) Alpha Mindset — narrativa estratégica de expansão europeia, (2) Legal Anatomy — checklist técnico adaptado ao seu perfil, com prazos e ordem exata, (3) War Room Docs — templates pré-formatados seguindo padrões consulares, (4) Integrated Family — roadmap familiar integrado. ${cta}"
-
-IMPORTANTE: Escreva de forma fluida e natural, mantendo a estrutura mas usando suas próprias palavras. Seja conciso e direto.
+IMPORTANTE: Seja direto e específico. Use os dados fornecidos. Não invente estatísticas.
 `.trim();
     },
     
-    en: ({ profile, score, status, gaps, strengths }) => {
-        const band = getScoreBand(score);
-        
-        const abertura = typeof ABERTURAS[ABERTURA_VERSION].en === 'function'
-            ? ABERTURAS[ABERTURA_VERSION].en(profile, score, status)
-            : ABERTURAS[ABERTURA_VERSION].en;
-        
-        const cta = CTAS[CTA_VERSION].en;
-        
-        const problems = {
-            '90-100': `The Spanish consulate evaluates the STRUCTURE of presentation: chronological order of contracts, bank statement formatting, and consistency across documents. The government doesn't just assess IF you have documents, but HOW they tell your professional story convincingly.`,
-            '75-89': `The Spanish government doesn't just assess IF you have documents, but HOW they tell your professional story. Presentation sequence, attachment format, and coherence between statements are decisive criteria not found in generic checklists.`,
-            '60-74': `The consulate evaluates whether your documentation forms a clear narrative of stability. This requires knowing WHERE each document enters the dossier, WHEN to present it, and HOW to format it according to technical consular standards.`,
-            '40-59': `You know WHICH documents you need, but the next challenge is knowing HOW to structure them. The Spanish government has rigorous technical criteria: exact PDF formatting, logical attachment order, correct type of translation.`,
-            '0-39': `Gathering documents is phase 1. Structuring them according to consulate standards is phase 2. Without a clear roadmap, candidates spend months trying to figure out which document comes first, how to format each PDF, when to use sworn translation.`
-        };
+    en: ({ profile, score, strengths }) => {
+        const strengthsList = Array.isArray(strengths) && strengths.length > 0
+            ? strengths.map(sanitizeForPrompt).join(', ')
+            : 'developing profile';
         
         return `
-You are Alpha AI, ExpandSpain's strategic visa advisor. Write in English.
+You are Alpha AI, ExpandSpain's strategic consultant. Write in English.
+
+IMPORTANT CONTEXT:
+This text will be inserted between other FIXED paragraphs that you MUST NOT mention, replace, or reference.
+You are writing ONLY paragraph 3, which analyzes the candidate's strengths.
 
 CANDIDATE DATA:
 - Profile: ${profile}
-- Score: ${score}/100 (Band: ${band})
-- Status: ${status}
+- Score: ${score}/100
+- Identified Strengths: ${strengthsList}
 
-GOAL: Produce a CONCISE 3-paragraph analysis (120-220 words) that SELLS Power Oracle™ (€97). Direct and honest tone.
+TASK: Write ONE SINGLE HTML PARAGRAPH (50-80 words) analyzing this candidate's strengths strategically and persuasively.
 
-NON-NEGOTIABLE RULES:
-- Length: 120-220 words. No emojis.
-- Tone: direct, strategic, honest (no made-up numbers).
-- Address as "you."
-- Mention "Power Oracle™" only in paragraph 3.
+ABSOLUTE RULES:
+✓ Length: 50-80 words
+✓ Format: Simple HTML with <strong> for highlights
+✓ Tone: strategic, confident, motivating
+✓ Use "you" or "your"
+✓ Start with: "Your profile presents..." or "Your strengths include..."
+✓ Connect strengths with consular requirements
+✓ DO NOT mention "Power Oracle™" or "modules"
+✓ DO NOT mention "previous paragraph" or "as we saw"
+✓ NO emojis
+✓ Be specific about THE PROVIDED STRENGTHS
 
-MANDATORY STRUCTURE:
+MANDATORY HTML STRUCTURE:
+<div class="analysis-section section-strengths">
+    <h3 class="section-label">✅ Your Strengths</h3>
+    <p>[YOUR TEXT HERE with <strong> on main highlights]</p>
+    <p class="next-step">[Transition sentence to action - 10-15 words]</p>
+</div>
 
-PARAGRAPH 1 (2-3 lines) — Opening + Gap:
-"${abertura} Most candidates don't realize: having the right documents isn't the same as presenting them as the Spanish government requires to grant the visa."
+EXPECTED OUTPUT EXAMPLE:
+<div class="analysis-section section-strengths">
+    <h3 class="section-label">✅ Your Strengths</h3>
+    <p>Your profile presents <strong>stable income above the minimum required</strong>, consistent professional documentation, and <strong>proven remote work history</strong>. These elements form a solid foundation that, when structured according to Spanish consulate technical standards, meet the decisive approval criteria.</p>
+    <p class="next-step">The next step is to transform these strengths into a winning application.</p>
+</div>
 
-PARAGRAPH 2 (3-4 lines) — Invisible Problem:
-"${problems[band]}"
-
-PARAGRAPH 3 (4-5 lines) — Power Oracle™ = Solution:
-"The next step is to align your documents with the Power Oracle™ method for obtaining the visa. This action plan transforms 'right documents' into 'approved application' through 4 modules: (1) Alpha Mindset — strategic European expansion narrative, (2) Legal Anatomy — technical checklist adapted to your profile, with exact deadlines and order, (3) War Room Docs — pre-formatted templates following consular standards, (4) Integrated Family — integrated family roadmap. ${cta}"
-
-IMPORTANT: Write fluidly and naturally, maintaining the structure but using your own words. Be concise and direct.
+IMPORTANT: Be direct and specific. Use the provided data. Don't invent statistics.
 `.trim();
     },
     
-    es: ({ profile, score, status, gaps, strengths }) => {
-        const band = getScoreBand(score);
-        
-        const abertura = typeof ABERTURAS[ABERTURA_VERSION].es === 'function'
-            ? ABERTURAS[ABERTURA_VERSION].es(profile, score, status)
-            : ABERTURAS[ABERTURA_VERSION].es;
-        
-        const cta = CTAS[CTA_VERSION].es;
-        
-        const problems = {
-            '90-100': `El consulado español evalúa la ESTRUCTURA de presentación: orden cronológico de contratos, formato de extractos bancarios, y consistencia entre documentos. El gobierno no evalúa solo SI tienes los documentos, sino CÓMO cuentan tu historia profesional de forma convincente.`,
-            '75-89': `El gobierno español no evalúa solo SI tienes los documentos, sino CÓMO cuentan tu historia profesional. La secuencia de presentación, el formato de anexos, y la coherencia entre declaraciones son criterios decisivos que no aparecen en checklists genéricos.`,
-            '60-74': `El consulado evalúa si tu documentación forma una narrativa clara de estabilidad. Esto requiere saber DÓNDE entra cada documento en el dosier, CUÁNDO presentarlo, y CÓMO formatearlo según estándares consulares técnicos.`,
-            '40-59': `Sabes QUÉ documentos necesitas, pero el siguiente desafío es saber CÓMO estructurarlos. El gobierno español tiene criterios técnicos rigurosos: formato exacto de PDFs, orden lógico de anexos, tipo correcto de traducción.`,
-            '0-39': `Reunir documentos es fase 1. Estructurarlos según estándares consulares es fase 2. Sin un roadmap claro, candidatos pasan meses intentando descubrir qué documento va primero, cómo formatear cada PDF, cuándo usar traducción jurada.`
-        };
+    es: ({ profile, score, strengths }) => {
+        const strengthsList = Array.isArray(strengths) && strengths.length > 0
+            ? strengths.map(sanitizeForPrompt).join(', ')
+            : 'perfil en desarrollo';
         
         return `
-Eres Alpha AI, asesora estratégica de visas de ExpandSpain. Escribe en Español.
+Eres Alpha AI, consultora estratégica de ExpandSpain. Escribe en Español.
+
+CONTEXTO IMPORTANTE:
+Este texto se insertará entre otros párrafos FIJOS que NO DEBES mencionar, reemplazar o referenciar.
+Estás escribiendo SOLO el párrafo 3, que analiza los puntos fuertes del candidato.
 
 DATOS DEL CANDIDATO:
 - Perfil: ${profile}
-- Puntuación: ${score}/100 (Banda: ${band})
-- Estado: ${status}
+- Puntuación: ${score}/100
+- Puntos Fuertes Identificados: ${strengthsList}
 
-OBJETIVO: Crear un análisis CONCISO de 3 párrafos (120-220 palabras) que VENDA Power Oracle™ (€97). Tono directo y honesto.
+TAREA: Escribe UN ÚNICO PÁRRAFO HTML (50-80 palabras) analizando los puntos fuertes de este candidato de forma estratégica y persuasiva.
 
-REGLAS INNEGOCIABLES:
-- Extensión: 120-220 palabras. Sin emojis.
-- Tono: directo, estratégico, honesto (sin números inventados).
-- Dirígete como "tú."
-- Menciona "Power Oracle™" solo en párrafo 3.
+REGLAS ABSOLUTAS:
+✓ Extensión: 50-80 palabras
+✓ Formato: HTML simple con <strong> para destacados
+✓ Tono: estratégico, confiado, motivador
+✓ Usar "tú" o "tu/tus"
+✓ Comenzar con: "Tu perfil presenta..." o "Tus puntos fuertes incluyen..."
+✓ Conectar puntos fuertes con requisitos consulares
+✓ NO mencionar "Power Oracle™" ni "módulos"
+✓ NO mencionar "párrafo anterior" o "como vimos"
+✓ SIN emojis
+✓ Ser específico sobre LOS PUNTOS FUERTES proporcionados
 
-ESTRUCTURA OBLIGATORIA:
+ESTRUCTURA HTML OBLIGATORIA:
+<div class="analysis-section section-strengths">
+    <h3 class="section-label">✅ Tus Puntos Fuertes</h3>
+    <p>[TU TEXTO AQUÍ con <strong> en los destacados principales]</p>
+    <p class="next-step">[Frase de transición a la acción - 10-15 palabras]</p>
+</div>
 
-PÁRRAFO 1 (2-3 líneas) — Apertura + Gap:
-"${abertura} La mayoría de los candidatos no percibe: tener los documentos correctos no es lo mismo que presentarlos como el gobierno español exige para conceder el visado."
+EJEMPLO DE OUTPUT ESPERADO:
+<div class="analysis-section section-strengths">
+    <h3 class="section-label">✅ Tus Puntos Fuertes</h3>
+    <p>Tu perfil presenta <strong>renta estable por encima del mínimo exigido</strong>, documentación profesional consistente, y <strong>historial comprobado de trabajo remoto</strong>. Estos elementos forman una base sólida que, estructurados según los estándares técnicos del consulado español, cumplen con los criterios decisivos de aprobación.</p>
+    <p class="next-step">El siguiente paso es transformar estos puntos fuertes en una solicitud ganadora.</p>
+</div>
 
-PÁRRAFO 2 (3-4 líneas) — Problema Invisible:
-"${problems[band]}"
-
-PÁRRAFO 3 (4-5 líneas) — Power Oracle™ = Solución:
-"El siguiente paso es adecuar tus documentos al método Power Oracle™ de obtener el visado. Este plan de acción transforma 'documentos correctos' en 'solicitud aprobada' a través de 4 módulos: (1) Alpha Mindset — narrativa estratégica de expansión europea, (2) Legal Anatomy — checklist técnico adaptado a tu perfil, con plazos y orden exacto, (3) War Room Docs — plantillas pre-formateadas siguiendo estándares consulares, (4) Integrated Family — roadmap familiar integrado. ${cta}"
-
-IMPORTANTE: Escribe de forma fluida y natural, manteniendo la estructura pero usando tus propias palabras. Sé conciso y directo.
+IMPORTANTE: Sé directo y específico. Usa los datos proporcionados. No inventes estadísticas.
 `.trim();
     }
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// VALIDAÇÃO DE OUTPUT (AJUSTADA: 120-220 PALAVRAS)
+// FALLBACKS PARA PARÁGRAFO 3
 // ═══════════════════════════════════════════════════════════════════════════
 
-function validateAIOutput(analysis) {
-    const issues = [];
-    
-    if (!analysis || typeof analysis !== 'string') {
-        issues.push('Output é null ou não é string');
-        return issues;
-    }
-    
-    const trimmed = analysis.trim();
-    if (trimmed.length === 0) {
-        issues.push('Output está vazio');
-        return issues;
-    }
-    
-    const words = trimmed.split(/\s+/).length;
-    if (words < 120) {
-        issues.push(`Muito curto (${words} palavras, mínimo 120)`);
-    }
-    if (words > 220) {
-        issues.push(`Muito longo (${words} palavras, máximo 220)`);
-    }
-    
-    if (!/Power Oracle/i.test(trimmed)) {
-        issues.push('Faltou mencionar Power Oracle™');
-    }
-    
-    const paragraphs = trimmed.split(/\n\s*\n/).filter(p => p.trim().length > 20);
-    if (paragraphs.length < 2) {
-        issues.push(`Estrutura insuficiente (${paragraphs.length} parágrafos, mínimo 2)`);
-    }
-    
-    return issues;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// FALLBACKS OFFLINE (120-220 PALAVRAS)
-// ═══════════════════════════════════════════════════════════════════════════
-
-const FALLBACKS = {
-    pt: (score, profile) => {
-        const abertura = typeof ABERTURAS[ABERTURA_VERSION].pt === 'function'
-            ? ABERTURAS[ABERTURA_VERSION].pt(profile, score, 'em avaliação')
-            : ABERTURAS[ABERTURA_VERSION].pt;
-        
-        const cta = CTAS[CTA_VERSION].pt;
-        
-        return `${abertura} A maioria dos candidatos não percebe: ter os documentos corretos não é o mesmo que apresentá-los como o governo espanhol exige para conceder o visto.
-
-O consulado espanhol avalia a ESTRUTURA da apresentação: ordem cronológica, formatação técnica, e consistência entre documentos. O governo não analisa apenas SE você tem os documentos, mas COMO eles contam sua história profissional.
-
-O próximo passo é adequar seus documentos ao método Power Oracle™ de obter o visto. Este plano de ação transforma 'documentos corretos' em 'aplicação aprovada' através de 4 módulos: (1) Alpha Mindset, (2) Legal Anatomy, (3) War Room Docs, (4) Integrated Family. ${cta}`;
+const STRENGTHS_FALLBACKS = {
+    pt: (score) => {
+        if (score >= 75) {
+            return `<div class="analysis-section section-strengths">
+                <h3 class="section-label">✅ Seus Pontos Fortes</h3>
+                <p>Seu perfil apresenta <strong>documentação profissional consistente</strong>, histórico de trabalho remoto estabelecido, e <strong>renda que atende ou supera os requisitos mínimos</strong>. Esses elementos formam uma base sólida que, estruturados segundo os padrões técnicos do consulado, atendem aos critérios decisivos de aprovação.</p>
+                <p class="next-step">O próximo passo é transformar esses pontos fortes em uma aplicação vencedora.</p>
+            </div>`;
+        } else if (score >= 50) {
+            return `<div class="analysis-section section-strengths">
+                <h3 class="section-label">✅ Seus Pontos Fortes</h3>
+                <p>Seu perfil demonstra <strong>capacidade de trabalho remoto comprovável</strong>, fontes de renda identificáveis, e disposição para seguir os procedimentos legais corretos. Com a estruturação adequada dos documentos segundo padrões consulares, você pode construir um dossiê aprovável.</p>
+                <p class="next-step">O próximo passo é fortalecer seu perfil seguindo o roadmap técnico específico.</p>
+            </div>`;
+        } else {
+            return `<div class="analysis-section section-strengths">
+                <h3 class="section-label">✅ Seus Pontos Fortes Iniciais</h3>
+                <p>Seu perfil demonstra <strong>interesse genuíno na mobilidade europeia</strong> e tempo disponível para preparar a documentação corretamente. Candidatos com scores similares que seguiram o roadmap estruturado conseguiram elevar significativamente suas chances de aprovação.</p>
+                <p class="next-step">O próximo passo é fortalecer seu perfil através do plano de ação técnico.</p>
+            </div>`;
+        }
     },
     
-    en: (score, profile) => {
-        const abertura = typeof ABERTURAS[ABERTURA_VERSION].en === 'function'
-            ? ABERTURAS[ABERTURA_VERSION].en(profile, score, 'under evaluation')
-            : ABERTURAS[ABERTURA_VERSION].en;
-        
-        const cta = CTAS[CTA_VERSION].en;
-        
-        return `${abertura} Most candidates don't realize: having the right documents isn't the same as presenting them as the Spanish government requires to grant the visa.
-
-The Spanish consulate evaluates the STRUCTURE of presentation: chronological order, technical formatting, and consistency across documents. The government doesn't just assess IF you have documents, but HOW they tell your professional story.
-
-The next step is to align your documents with the Power Oracle™ method for obtaining the visa. This action plan transforms 'right documents' into 'approved application' through 4 modules: (1) Alpha Mindset, (2) Legal Anatomy, (3) War Room Docs, (4) Integrated Family. ${cta}`;
+    en: (score) => {
+        if (score >= 75) {
+            return `<div class="analysis-section section-strengths">
+                <h3 class="section-label">✅ Your Strengths</h3>
+                <p>Your profile presents <strong>consistent professional documentation</strong>, established remote work history, and <strong>income that meets or exceeds minimum requirements</strong>. These elements form a solid foundation that, when structured according to consulate technical standards, meet the decisive approval criteria.</p>
+                <p class="next-step">The next step is to transform these strengths into a winning application.</p>
+            </div>`;
+        } else if (score >= 50) {
+            return `<div class="analysis-section section-strengths">
+                <h3 class="section-label">✅ Your Strengths</h3>
+                <p>Your profile demonstrates <strong>provable remote work capability</strong>, identifiable income sources, and willingness to follow correct legal procedures. With proper document structuring according to consular standards, you can build an approvable dossier.</p>
+                <p class="next-step">The next step is to strengthen your profile following the specific technical roadmap.</p>
+            </div>`;
+        } else {
+            return `<div class="analysis-section section-strengths">
+                <h3 class="section-label">✅ Your Initial Strengths</h3>
+                <p>Your profile demonstrates <strong>genuine interest in European mobility</strong> and available time to prepare documentation correctly. Candidates with similar scores who followed the structured roadmap significantly elevated their approval chances.</p>
+                <p class="next-step">The next step is to strengthen your profile through the technical action plan.</p>
+            </div>`;
+        }
     },
     
-    es: (score, profile) => {
-        const abertura = typeof ABERTURAS[ABERTURA_VERSION].es === 'function'
-            ? ABERTURAS[ABERTURA_VERSION].es(profile, score, 'en evaluación')
-            : ABERTURAS[ABERTURA_VERSION].es;
-        
-        const cta = CTAS[CTA_VERSION].es;
-        
-        return `${abertura} La mayoría de los candidatos no percibe: tener los documentos correctos no es lo mismo que presentarlos como el gobierno español exige para conceder el visado.
-
-El consulado español evalúa la ESTRUCTURA de presentación: orden cronológico, formato técnico, y consistencia entre documentos. El gobierno no evalúa solo SI tienes los documentos, sino CÓMO cuentan tu historia profesional.
-
-El siguiente paso es adecuar tus documentos al método Power Oracle™ de obtener el visado. Este plan de acción transforma 'documentos correctos' en 'solicitud aprobada' a través de 4 módulos: (1) Alpha Mindset, (2) Legal Anatomy, (3) War Room Docs, (4) Integrated Family. ${cta}`;
+    es: (score) => {
+        if (score >= 75) {
+            return `<div class="analysis-section section-strengths">
+                <h3 class="section-label">✅ Tus Puntos Fuertes</h3>
+                <p>Tu perfil presenta <strong>documentación profesional consistente</strong>, historial de trabajo remoto establecido, y <strong>renta que cumple o supera los requisitos mínimos</strong>. Estos elementos forman una base sólida que, estructurados según los estándares técnicos del consulado, cumplen con los criterios decisivos de aprobación.</p>
+                <p class="next-step">El siguiente paso es transformar estos puntos fuertes en una solicitud ganadora.</p>
+            </div>`;
+        } else if (score >= 50) {
+            return `<div class="analysis-section section-strengths">
+                <h3 class="section-label">✅ Tus Puntos Fuertes</h3>
+                <p>Tu perfil demuestra <strong>capacidad de trabajo remoto comprobable</strong>, fuentes de renta identificables, y disposición para seguir los procedimientos legales correctos. Con la estructuración adecuada de los documentos según estándares consulares, puedes construir un dosier aprobable.</p>
+                <p class="next-step">El siguiente paso es fortalecer tu perfil siguiendo la hoja de ruta técnica específica.</p>
+            </div>`;
+        } else {
+            return `<div class="analysis-section section-strengths">
+                <h3 class="section-label">✅ Tus Puntos Fuertes Iniciales</h3>
+                <p>Tu perfil demuestra <strong>interés genuino en la movilidad europea</strong> y tiempo disponible para preparar la documentación correctamente. Candidatos con puntuaciones similares que siguieron la hoja de ruta estructurada elevaron significativamente sus posibilidades de aprobación.</p>
+                <p class="next-step">El siguiente paso es fortalecer tu perfil a través del plan de acción técnico.</p>
+            </div>`;
+        }
     }
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// FUNÇÃO PRINCIPAL: GERAÇÃO DE ANÁLISE COM IA
+// FUNÇÃO PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function generateAIAnalysis(scoreData, answers, language = 'pt') {
     console.log('═'.repeat(70));
-    console.log('🤖 [IA v10.1] generateAIAnalysis() CHAMADA');
+    console.log('🤖 [IA v12.2] generateAIAnalysis() CHAMADA');
     console.log(`   Score: ${scoreData?.score}/100`);
     console.log(`   Profile: ${scoreData?.profile}`);
     console.log(`   Language: ${language}`);
-    console.log(`   Abertura: ${ABERTURA_VERSION} | CTA: ${CTA_VERSION}`);
     console.log('═'.repeat(70));
     
     const lang = ['pt', 'en', 'es'].includes(language) ? language : 'pt';
     
     try {
-        // Verificar cache
-        const cacheKey = generateCacheKey(scoreData, lang, ABERTURA_VERSION, CTA_VERSION);
-        console.log(`📦 [Cache] Verificando... Key: ${cacheKey.substring(0, 40)}...`);
+        const cacheKey = generateCacheKey(scoreData, lang);
+        console.log(`📦 [Cache] Verificando...`);
         
         const cached = analysisCache.get(cacheKey);
         if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
@@ -396,106 +610,92 @@ async function generateAIAnalysis(scoreData, answers, language = 'pt') {
             return cached.analysis;
         }
         
-        console.log(`❌ [Cache] Não encontrado`);
+        console.log(`❌ [Cache] Não encontrado, gerando nova análise...`);
         
-        // Preparar dados
-        const safeProfile = sanitizeForPrompt(scoreData?.profile || 'Candidato');
-        const safeGaps = (scoreData?.gaps || []).map(sanitizeForPrompt).join(', ');
-        const safeStrengths = (scoreData?.strengths || []).map(sanitizeForPrompt).join(', ');
-        const score = Number(scoreData?.score || 0);
-        const status = sanitizeForPrompt(scoreData?.status || 'Em avaliação');
+        const title = FIXED_TEXTS.analysisTitle[lang];
+        const p1 = FIXED_TEXTS.paragraph1[lang];
+        const p2 = FIXED_TEXTS.paragraph2[lang];
+        const p4 = FIXED_TEXTS.paragraph4[lang];
         
-        console.log(`\n📝 [Prompt] Preparando...`);
+        let p3;
         
-        const prompt = PROMPT_TEMPLATES[lang]({
-            profile: safeProfile,
-            score,
-            status,
-            gaps: safeGaps,
-            strengths: safeStrengths
-        });
-        
-        console.log(`   Tamanho: ${prompt.length} caracteres`);
-        console.log(`   Modelo: ${MODEL_ID}`);
-        
-        // Chamar Gemini API
-        console.log(`\n🔄 [IA] Enviando requisição para Gemini...`);
-        
-        const model = genAI.getGenerativeModel({
-            model: MODEL_ID,
-            generationConfig: {
-                temperature: 0.7,
-                topK: 40,
-                topP: 0.95,
-                maxOutputTokens: 512,
-            }
-        });
-        
-        const startTime = Date.now();
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const elapsed = Date.now() - startTime;
-        
-        console.log(`   Resposta recebida em ${elapsed}ms`);
-        
-        // Extrair texto
-        const analysis = response.text();
-        
-        if (!analysis || analysis.trim() === '') {
-            throw new Error('Resposta vazia da IA');
-        }
-        
-        console.log(`✅ [IA] Sucesso!`);
-        console.log(`   Tamanho: ${analysis.length} caracteres`);
-        console.log(`   Palavras: ${analysis.split(/\s+/).length}`);
-        
-        // Validar
-        const issues = validateAIOutput(analysis);
-        if (issues.length > 0) {
-            console.warn(`⚠️  [Validação] ${issues.length} problema(s):`);
-            issues.forEach(i => console.warn(`   - ${i}`));
+        try {
+            const safeProfile = sanitizeForPrompt(scoreData?.profile || 'Candidato');
+            const score = Number(scoreData?.score || 0);
+            const strengths = scoreData?.strengths || [];
             
-            const critical = issues.some(i => /Power Oracle|vazio/i.test(i));
-            if (critical) {
-                console.error(`❌ [Validação] Problemas críticos, usando fallback`);
-                throw new Error('Validação crítica falhou');
+            const prompt = STRENGTHS_PROMPTS[lang]({
+                profile: safeProfile,
+                score,
+                strengths
+            });
+            
+            console.log(`\n🔄 [IA] Gerando parágrafo 3 (pontos fortes)...`);
+            
+            const model = genAI.getGenerativeModel({
+                model: MODEL_ID,
+                generationConfig: {
+                    temperature: 0.65,
+                    topK: 40,
+                    topP: 0.9,
+                    maxOutputTokens: 200,
+                }
+            });
+            
+            const startTime = Date.now();
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            const elapsed = Date.now() - startTime;
+            
+            p3 = response.text().trim();
+            
+            console.log(`✅ [IA] Parágrafo 3 gerado em ${elapsed}ms`);
+            
+            if (!p3.includes('class="analysis-section section-strengths"')) {
+                console.warn(`⚠️  [Validação] Estrutura HTML incorreta, usando fallback`);
+                throw new Error('Validação de estrutura falhou');
             }
+            
+        } catch (err) {
+            console.error(`❌ [IA] Erro ao gerar parágrafo 3: ${err.message}`);
+            console.log(`📝 [Fallback] Usando texto pré-definido...`);
+            
+            const score = Number(scoreData?.score || 0);
+            p3 = STRENGTHS_FALLBACKS[lang](score);
         }
         
-        // Salvar cache
+        const fullAnalysisHTML = `${title}\n\n${p1}\n\n${p2}\n\n${p3}\n\n${p4}`;
+        
+        console.log(`\n✅ [Resultado] Análise HTML completa montada`);
+        console.log(`   Total de caracteres: ${fullAnalysisHTML.length}`);
+        
         analysisCache.set(cacheKey, {
-            analysis: analysis,
+            analysis: fullAnalysisHTML,
             timestamp: Date.now()
         });
         
         console.log(`📦 [Cache] Salvo (total: ${analysisCache.size} entradas)`);
         console.log('═'.repeat(70));
-        console.log('✅ [IA] Análise gerada com SUCESSO!');
-        console.log('═'.repeat(70));
         
-        return analysis;
+        return fullAnalysisHTML;
         
     } catch (err) {
         console.error('═'.repeat(70));
-        console.error('❌ [IA] ERRO - Usando fallback offline');
+        console.error('❌ [IA] ERRO CRÍTICO - Usando fallback completo');
         console.error(`   Erro: ${err.message}`);
         console.error('═'.repeat(70));
         
         const score = Number(scoreData?.score || 0);
-        const profile = sanitizeForPrompt(scoreData?.profile || 'Candidato');
         
-        const fallback = FALLBACKS[lang](score, profile);
+        const title = FIXED_TEXTS.analysisTitle[lang];
+        const p1 = FIXED_TEXTS.paragraph1[lang];
+        const p2 = FIXED_TEXTS.paragraph2[lang];
+        const p3 = STRENGTHS_FALLBACKS[lang](score);
+        const p4 = FIXED_TEXTS.paragraph4[lang];
         
-        console.log(`📝 [Fallback] Análise offline gerada (${fallback.length} caracteres)`);
-        console.log('═'.repeat(70));
-        
-        return fallback;
+        return `${title}\n\n${p1}\n\n${p2}\n\n${p3}\n\n${p4}`;
     }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// EXPORTS
-// ═══════════════════════════════════════════════════════════════════════════
 
 module.exports = {
     generateAIAnalysis
